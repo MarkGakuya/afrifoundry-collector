@@ -1,0 +1,10 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* If Tailwind not available, use these fallback styles */
+@layer base {
+  * {
+    border-color: theme('colors.gray.700');
+  }
+}
