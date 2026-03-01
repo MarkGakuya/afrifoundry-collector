@@ -1,24 +1,14 @@
 {
-  "name": "AfriFoundry Data Collector",
-  "short_name": "AfriFoundry",
-  "description": "Professional field data collection tool for African innovation",
+  "name": "AfriScout — AfriFoundry Collector",
+  "short_name": "AfriScout",
+  "description": "AfriFoundry field data collection — offline-first, 15 sectors, 225+ items",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#111827",
-  "theme_color": "#10b981",
+  "background_color": "#080810",
+  "theme_color": "#F97316",
   "orientation": "portrait",
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ]
 }
