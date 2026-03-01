@@ -1,1036 +1,1198 @@
 import React, { useState, useEffect } from 'react';
-import { Camera, MapPin, Save, Download, Trash2, CheckCircle, Plus, Edit2, List, FileText, Settings, Wifi, WifiOff, Upload, TrendingUp, Award, Share2, AlertCircle } from 'lucide-react';
+import {
+  Camera, MapPin, Save, Download, Trash2, List,
+  Settings, Award, RefreshCw, LogOut, User,
+  BarChart2, Shield, AlertCircle
+} from 'lucide-react';
 
-const DataCollectorPro = () => {
-  const APP_VERSION = "1.0.0";
-  const GOAL_PER_DAY = 15;
-  
-  const [entries, setEntries] = useState([]);
-  const [sectors, setSectors] = useState([]);
-  const [surveyTemplates, setSurveyTemplates] = useState([]);
-  const [currentMode, setCurrentMode] = useState('field');
-  const [currentView, setCurrentView] = useState('collect');
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
-  const [todayCount, setTodayCount] = useState(0);
-  const [showSuccess, setShowSuccess] = useState(false);
-  
-  const [currentEntry, setCurrentEntry] = useState({
-    mode: 'field',
-    sector: '',
-    item: '',
-    value: '',
-    unit: 'KES',
-    location: '',
-    source_name: '',
-    source_type: '',
-    notes: '',
-    photo_note: '',
-    photoData: null,
-    surveyResponses: {},
-    timestamp: new Date().toISOString()
-  });
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIG
+// ─────────────────────────────────────────────────────────────────────────────
+const API_BASE    = 'https://afrifoundry-api.onrender.com';
+const APP_VERSION = '2.0.0';
+const GOAL_DAY    = 15;
+const GOAL_TOTAL  = 10000;
+const OUTLIER_PCT = 0.40; // flag if ±40% from known median
 
-  const [gpsCoords, setGpsCoords] = useState(null);
-  const [newSector, setNewSector] = useState({ id: '', name: '', icon: '' });
+// ─────────────────────────────────────────────────────────────────────────────
+// 15 SECTORS
+// ─────────────────────────────────────────────────────────────────────────────
+const SECTORS = [
+  { id:'agriculture',    name:'Agriculture',   icon:'🌾' },
+  { id:'health',         name:'Health',         icon:'🏥' },
+  { id:'energy',         name:'Energy',         icon:'⚡' },
+  { id:'water',          name:'Water',          icon:'💧' },
+  { id:'infrastructure', name:'Infrastructure', icon:'🏗️' },
+  { id:'fintech',        name:'Fintech',        icon:'💰' },
+  { id:'transport',      name:'Transport',      icon:'🚗' },
+  { id:'education',      name:'Education',      icon:'📚' },
+  { id:'food',           name:'Food',           icon:'🍽️' },
+  { id:'retail',         name:'Retail',         icon:'🛍️' },
+  { id:'telecom',        name:'Telecom',        icon:'📡' },
+  { id:'housing',        name:'Housing',        icon:'🏠' },
+  { id:'manufacturing',  name:'Manufacturing',  icon:'🏭' },
+  { id:'technology',     name:'Technology',     icon:'💻' },
+  { id:'tourism',        name:'Tourism',        icon:'🏖️' },
+];
 
-  const defaultSectors = [
-    { id: 'agriculture', name: 'Agriculture', icon: '🌾', color: 'bg-green-600' },
-    { id: 'health', name: 'Health', icon: '🏥', color: 'bg-blue-600' },
-    { id: 'energy', name: 'Energy', icon: '⚡', color: 'bg-yellow-600' },
-    { id: 'water', name: 'Water', icon: '💧', color: 'bg-cyan-600' },
-    { id: 'fintech', name: 'Fintech', icon: '💰', color: 'bg-purple-600' },
-    { id: 'infrastructure', name: 'Infrastructure', icon: '🏗️', color: 'bg-gray-600' }
-  ];
+// ─────────────────────────────────────────────────────────────────────────────
+// 225+ ITEMS BY SECTOR
+// ─────────────────────────────────────────────────────────────────────────────
+const ITEMS = {
+  agriculture: [
+    'Maize seed (H614D) 2kg','Maize seed (H516) 2kg','Sorghum seed 1kg','Bean seed 1kg',
+    'Sunflower seed 1kg','Cabbage seedlings (tray)','Tomato seedlings (tray)',
+    'CAN fertilizer 50kg','DAP fertilizer 50kg','NPK fertilizer 50kg','Urea 50kg',
+    'Pesticide Duduthrin 1L','Herbicide Roundup 1L','Fungicide Dithane 1kg',
+    'Maize dry per 90kg bag','Tomatoes per crate','Onions per bag 50kg',
+    'Potatoes per 50kg bag','Cabbages per head','Kale (sukuma) per bundle',
+    'Chicken broiler live 1kg','Eggs per tray 30','Milk per litre raw',
+    'Cattle mature bull','Goat mature','Pig mature',
+    'Farm labour per day','Tractor hire per acre','Cold storage per kg/month',
+  ],
+  health: [
+    'Consultation public clinic','Consultation private clinic','Consultation pharmacy',
+    'Paracetamol pack 24s','Amoxicillin 500mg strip 10','Metronidazole 400mg strip 10',
+    'ORS sachet','Malaria RDT test','Malaria treatment ALu 6 tabs',
+    'Surgical gloves box 100','Face masks box 50','Hand sanitizer 500ml',
+    'Blood pressure monitor','Thermometer digital','Oxygen concentrator hire/day',
+    'Ambulance hire within county','Hospital bed public per day','Hospital bed private per day',
+    'Lab test CBC','Lab test malaria smear','Lab test pregnancy','X-ray chest',
+    'Ultrasound scan','Dental extraction','Eye test + glasses',
+    'Sanitary pads pack 8','Contraceptive pills monthly','Family planning injection',
+  ],
+  energy: [
+    'Kerosene per litre','Petrol per litre','Diesel per litre',
+    'LPG gas 6kg full cylinder','LPG gas 13kg full cylinder',
+    'Charcoal per 50kg bag','Firewood per bundle',
+    'Solar panel 100W','Solar panel 250W','Solar battery 100Ah','Solar inverter 1000W',
+    'Solar home installation basic','Solar lantern small','Solar lantern large',
+    'Generator hire per day','Generator 2.5KVA price',
+    'KPLC prepaid token per unit','Biogas digester household',
+    'Energy saving bulb 15W','Extension cable 10m','Grid connection fee KPLC',
+  ],
+  water: [
+    'Water per 20L jerry can','Water per month piped household',
+    'Borehole drilling per metre','Water pump electric 0.5HP',
+    'Water pump solar','Water pump manual',
+    'Water tank 1000L plastic','Water tank 5000L','Water tank 10000L',
+    'Water purification tablets 50s','Ceramic water filter','Water testing kit',
+    'Irrigation pipe per metre','Drip irrigation kit 1 acre',
+    'Rainwater harvesting tank 2500L','Water trucking per 10000L',
+  ],
+  infrastructure: [
+    'Cement per 50kg bag','Iron sheet gauge 30 8ft','Iron sheet gauge 28 10ft',
+    'Building sand per lorry 7t','Ballast per lorry','Hardcore per lorry',
+    'Timber 2x4 per metre','Timber 4x4 per metre','Roofing nails per kg',
+    'Concrete block per piece','Burnt brick per piece',
+    'Plywood sheet 4x8ft','Paint 4L gloss','Paint 4L emulsion',
+    'Floor tiles per m2','Steel rod 12mm per kg','Steel rod 10mm per kg',
+    'Jua kali gate per m2','Mason per day','Builder labourer per day',
+    'Plumber per day','Electrician per day','Carpenter per day',
+  ],
+  fintech: [
+    'M-Pesa send KES 100','M-Pesa send KES 1000','M-Pesa send KES 5000',
+    'M-Pesa withdrawal KES 100','M-Pesa withdrawal KES 1000','M-Pesa withdrawal KES 5000',
+    'Bank transfer fee','SACCO loan interest rate monthly','Chama contribution per month',
+    'Fuliza loan rate per day','Bank loan interest per year',
+    'Motor insurance bodaboda annual','Motor insurance car annual',
+    'NHIF contribution per month','NSSF contribution per month',
+    'Float cost per KES 10000','Pesalink transfer fee','Agent float refill cost',
+  ],
+  transport: [
+    'Matatu fare town route','Matatu fare inter-county',
+    'Bodaboda fare per km','Taxi Uber/Bolt base fare',
+    'SGR Nairobi-Mombasa fare','Bus fare cross-country',
+    'Bodaboda second-hand price','Bodaboda new price','Tuk-tuk price',
+    'Lorry hire per day','Pick-up truck hire per day',
+    'Container Mombasa-Nairobi shipping','Clearing and forwarding per container',
+    'Driver salary per month','Bodaboda daily earnings',
+    'Vehicle inspection NTSA','Driving licence fee','PSV licence fee',
+    'Motor insurance 3rd party annual','Motor insurance comprehensive annual',
+    'Tyre 14 inch per piece','Engine oil 4L','Bodaboda service cost',
+  ],
+  education: [
+    'Primary school fees per term public','Primary school fees per term private',
+    'Secondary school fees per term public','Secondary school fees per term private',
+    'University tuition per semester','TVET fees per semester',
+    'Tutoring per hour primary','Tutoring per hour secondary',
+    'Exercise book 96 pages','Textbook KCPE level','Textbook KCSE level',
+    'School uniform shirt + trouser','School shoes','School bag',
+    'School lunch per term','Boarding fee per term',
+    'Laptop student basic','Calculator scientific',
+    'Pre-school fees per month','Nursery fees per month',
+  ],
+  food: [
+    'Unga maize flour 2kg','Unga wheat flour 2kg','Rice per kg','Sugar per kg',
+    'Cooking oil 1L','Cooking oil 5L','Salt per 500g','Tea leaves 100g',
+    'Milk fresh 500ml','Milk long life 500ml','Eggs per piece',
+    'Beef per kg with bone','Beef per kg boneless','Chicken per kg live',
+    'Tilapia per kg fresh','Omena dagaa per kg',
+    'Chapati per piece','Mandazi per piece','Samosa per piece',
+    'Chai cup','Lunch plate hotel basic','Lunch plate restaurant mid',
+    'Soda Coke 300ml','Water bottle 500ml','Beer Tusker 500ml',
+    'Tomatoes per kg','Onions per kg','Potatoes per kg',
+    'Avocado per piece','Banana per bunch','Mango per piece',
+    'Githeri per plate','Ugali + sukuma per plate','Nyama choma per kg',
+  ],
+  retail: [
+    'Mobile phone basic feature','Mobile phone smart budget',
+    'Shoes canvas local','Shoes leather mid-range',
+    'T-shirt mitumba good','Trousers mitumba jeans','Dress mitumba',
+    'Shirt new local brand','Dress new market',
+    'Cooking pot 10L','Sufuria frying pan','Jiko charcoal stove',
+    'Plastic chair per piece','Plastic table','Mattress 3x6 foam',
+    'Blanket fleece','Mosquito net treated',
+    'Soap bar Menengai','Washing powder 500g','Toothpaste 75ml','Lotion 400ml',
+    'Sanitary pads pack','Baby diapers pack 10','Pampers jumbo pack',
+    'TV second-hand 32 inch','Radio speaker portable',
+  ],
+  telecom: [
+    'Safaricom SIM card','Airtel SIM card','Telkom SIM card',
+    'Safaricom data 1GB daily','Safaricom data 5GB monthly','Safaricom data 10GB monthly',
+    'Airtel data 1GB','Airtel unlimited daily',
+    'Safaricom airtime KES 50','Call rate per min on-net',
+    'Fibre home basic per month','Fibre home premium per month',
+    'WiFi hotspot hire per day','Cyber cafe per hour',
+    'Phone repair screen','Phone repair charging port','Phone charging per session',
+  ],
+  housing: [
+    'Single room Nairobi Eastlands rent','Single room Mombasa rent',
+    'Bedsitter Nairobi rent','Bedsitter Mombasa rent',
+    '1-bedroom Nairobi mid rent','1-bedroom Mombasa mid rent',
+    '2-bedroom Nairobi estate rent','2-bedroom Mombasa estate rent',
+    'Plot per acre rural','Plot 50x100 peri-urban',
+    'Land rent annual LTA','Caretaker salary per month',
+    'NWSC water connection fee','KPLC single phase connection',
+    'House painting per room','Roofing repair per m2',
+    'Security deposit typical months','Agent fee % annual rent',
+  ],
+  manufacturing: [
+    'Jua kali workshop rent per month','Welding gas per cylinder','Welding rod per kg',
+    'Metal fabrication gate per m2','Blacksmith per day',
+    'Plastic raw material per kg','Packaging material per unit',
+    'Industrial sewing machine second-hand','Fabric per metre local',
+    'Leather per sq foot','Shoemaking materials per pair',
+    'Candle wax per kg','Soap base cold process per kg','Essential oil 100ml',
+    'Printing A4 flyer per 100','Screen printing per piece',
+    'Pottery clay per kg','Handicraft materials per set',
+  ],
+  technology: [
+    'Laptop basic new','Laptop business grade new','Laptop second-hand good',
+    'Desktop assembled','Monitor 22 inch','Printer inkjet',
+    'Flash disk 32GB','External HDD 1TB','Router WiFi home',
+    'Phone repair software','Phone repair charging port',
+    'Microsoft 365 per month','Domain name per year',
+    'Web hosting basic per year','Web hosting VPS per year',
+    'Coding bootcamp fees','IT training per month',
+    'CCTV camera basic','CCTV installation per camera',
+    'POS machine purchase','POS machine hire per month',
+  ],
+  tourism: [
+    'Hotel room budget per night','Hotel room mid-range per night','Hotel room 3-star per night',
+    'Beach entry fee','National park entry resident','National park entry non-resident',
+    'Safari day trip per person','Guide fee per day',
+    'Curio wood carving','Curio kikoi cloth','Curio beaded jewellery',
+    'Boat trip 2hrs','Snorkelling hire','Diving session',
+    'Tourist transport per day','Conference room hire per day',
+    'Restaurant tourist area lunch','Street food near beach',
+  ],
+};
 
-  const defaultSurveys = [
-    {
-      id: 'tum_student_validation',
-      name: 'TUM Student Idea Validation',
-      description: 'Survey for TUM students about their innovation ideas',
-      questions: [
-        { id: 'q1', text: 'What sector is your innovation in?', type: 'select', options: ['Agriculture', 'Health', 'Water', 'Energy', 'Fintech', 'Other'] },
-        { id: 'q2', text: 'Describe your innovation in one sentence', type: 'text' },
-        { id: 'q3', text: 'What is your target monthly budget?', type: 'number', unit: 'KES' },
-        { id: 'q4', text: 'Have you validated this with real users?', type: 'select', options: ['Yes', 'No', 'In Progress'] },
-        { id: 'q5', text: 'Main challenge you face?', type: 'text' }
-      ]
-    },
-    {
-      id: 'farmer_survey',
-      name: 'Farmer Pain Points Survey',
-      description: 'Understanding farmer challenges and costs',
-      questions: [
-        { id: 'q1', text: 'Farm size (acres)', type: 'number', unit: 'acres' },
-        { id: 'q2', text: 'Main crop grown', type: 'text' },
-        { id: 'q3', text: 'Seed cost per season', type: 'number', unit: 'KES' },
-        { id: 'q4', text: 'Fertilizer cost per season', type: 'number', unit: 'KES' },
-        { id: 'q5', text: 'Biggest problem you face', type: 'text' },
-        { id: 'q6', text: 'Would you use mobile app for farming advice?', type: 'select', options: ['Yes', 'No', 'Maybe'] }
-      ]
-    },
-    {
-      id: 'clinic_owner_survey',
-      name: 'Small Clinic Owner Survey',
-      description: 'Understanding clinic operations and costs',
-      questions: [
-        { id: 'q1', text: 'Monthly budget (total)', type: 'number', unit: 'KES' },
-        { id: 'q2', text: 'Patients per day (average)', type: 'number', unit: 'patients' },
-        { id: 'q3', text: 'Power outages per week', type: 'number', unit: 'times' },
-        { id: 'q4', text: 'Generator cost per month', type: 'number', unit: 'KES' },
-        { id: 'q5', text: 'Biggest operational challenge', type: 'text' }
-      ]
-    }
-  ];
+// Known price medians for outlier detection (KES)
+const PRICE_MEDIANS = {
+  'unga maize flour 2kg':170,'milk fresh 500ml':35,'eggs per piece':15,
+  'tomatoes per crate':1800,'petrol per litre':210,'diesel per litre':200,
+  'kerosene per litre':130,'matatu fare town route':30,'bodaboda fare per km':50,
+  'cement per 50kg bag':750,'single room nairobi eastlands rent':3500,
+  'sugar per kg':160,'cooking oil 1l':230,'rice per kg':140,
+  'unga wheat flour 2kg':145,'beef per kg with bone':600,'chicken per kg live':380,
+  'lpg gas 6kg full cylinder':1200,'charcoal per 50kg bag':2500,
+};
 
+// ─────────────────────────────────────────────────────────────────────────────
+// KENYA REGIONS + MARKETS
+// ─────────────────────────────────────────────────────────────────────────────
+const REGIONS = [
+  { id:'nairobi',       name:'Nairobi',        markets:['Gikomba','Eastleigh','CBD','Westlands','Kibera','Karen','Ngong Road','Thika Road','Kayole','Githurai','Rongai'] },
+  { id:'mombasa',       name:'Mombasa',         markets:['Kongowea','Likoni','Mtwapa','Nyali','Old Town','Bamburi','Changamwe','Kisauni','Mikindani','Tudor'] },
+  { id:'kisumu',        name:'Kisumu',           markets:['CBD','Kondele','Kibuye','Migosi','Manyatta','Nyalenda','Mamboleo'] },
+  { id:'nakuru',        name:'Nakuru',           markets:['CBD','Maili Nne','Lanet','Milimani','Flamingo','Section 58'] },
+  { id:'eldoret',       name:'Eldoret',          markets:['CBD','Langas','Pioneer','Huruma','Kapseret','Kamukunji'] },
+  { id:'thika',         name:'Thika',            markets:['CBD','Makongeni','Garissa Road','Kiandutu'] },
+  { id:'rift_valley',   name:'Rift Valley',      markets:['Naivasha','Narok','Kericho','Bomet','Kajiado','Isinya'] },
+  { id:'coast_other',   name:'Coast (Other)',     markets:['Kilifi','Malindi','Diani','Lamu','Kwale','Voi','Mariakani'] },
+  { id:'western',       name:'Western',           markets:['Kakamega','Bungoma','Mumias','Webuye','Malaba'] },
+  { id:'eastern',       name:'Eastern',           markets:['Machakos','Kitui','Meru','Embu','Garissa','Isiolo'] },
+  { id:'central',       name:'Central',           markets:['Nyeri',"Murang'a",'Kiambu','Muranga','Karatina','Ol Kalou'] },
+];
+
+const UNITS = ['KES','KES/kg','KES/litre','KES/acre','KES/month','KES/day','KES/piece','KES/m²','KES/bag','%','hours','units'];
+
+const VENDOR_TYPES = [
+  'Supermarket','Kiosk / duka','Wholesale','Street vendor',
+  'Market stall','Agro-vet','Pharmacy','Hospital / clinic',
+  'SACCO / bank','Online / app','Hotel / restaurant','Other',
+];
+
+const SURVEY_TEMPLATES = [
+  { id:'farmer',   name:'Farmer Pain Points',             icon:'🌾',
+    questions:[
+      {id:'q1',text:'Farm size (acres)',type:'number',unit:'acres'},
+      {id:'q2',text:'Main crop grown',type:'text'},
+      {id:'q3',text:'Seed cost per season',type:'number',unit:'KES'},
+      {id:'q4',text:'Fertilizer cost per season',type:'number',unit:'KES'},
+      {id:'q5',text:'Where do you sell produce?',type:'select',options:['Local market','Middleman','Direct consumer','Cooperative','Export']},
+      {id:'q6',text:'Biggest challenge?',type:'text'},
+      {id:'q7',text:'Would you use mobile farming advice?',type:'select',options:['Yes','No','Maybe']},
+    ]},
+  { id:'vendor',   name:'Market Vendor Survey',           icon:'🛍️',
+    questions:[
+      {id:'q1',text:'What do you sell?',type:'text'},
+      {id:'q2',text:'Daily revenue (average)',type:'number',unit:'KES'},
+      {id:'q3',text:'Daily expenses (rent + stock + transport)',type:'number',unit:'KES'},
+      {id:'q4',text:'How do customers mostly pay?',type:'select',options:['Cash','M-Pesa','Both','Credit/delay']},
+      {id:'q5',text:'Years in business',type:'number',unit:'years'},
+      {id:'q6',text:'Biggest business challenge?',type:'text'},
+    ]},
+  { id:'clinic',   name:'Health Worker / Clinic',         icon:'🏥',
+    questions:[
+      {id:'q1',text:'Monthly operating budget',type:'number',unit:'KES'},
+      {id:'q2',text:'Patients per day (average)',type:'number',unit:'patients'},
+      {id:'q3',text:'Power outages per week',type:'number',unit:'times'},
+      {id:'q4',text:'Generator cost per month',type:'number',unit:'KES'},
+      {id:'q5',text:'Biggest operational challenge',type:'text'},
+    ]},
+  { id:'student',  name:'Student Idea Validation',        icon:'🎓',
+    questions:[
+      {id:'q1',text:'Innovation sector',type:'select',options:['Agriculture','Health','Water','Energy','Fintech','Retail','Technology','Other']},
+      {id:'q2',text:'Describe the innovation (one sentence)',type:'text'},
+      {id:'q3',text:'Target monthly revenue',type:'number',unit:'KES'},
+      {id:'q4',text:'Validated with real users?',type:'select',options:['Yes','No','In progress']},
+      {id:'q5',text:'Main challenge you face',type:'text'},
+    ]},
+  { id:'bodaboda', name:'Bodaboda / Transport Operator',  icon:'🏍️',
+    questions:[
+      {id:'q1',text:'Daily earnings (average)',type:'number',unit:'KES'},
+      {id:'q2',text:'Daily fuel cost',type:'number',unit:'KES'},
+      {id:'q3',text:'Bike owned or hired?',type:'select',options:['Own','Hired daily','Hired monthly','Loan']},
+      {id:'q4',text:'Hire/loan cost per month',type:'number',unit:'KES'},
+      {id:'q5',text:'Insurance per year',type:'number',unit:'KES'},
+      {id:'q6',text:'Biggest cost or challenge',type:'text'},
+    ]},
+];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DESIGN TOKENS
+// ─────────────────────────────────────────────────────────────────────────────
+const C = { orange:'#F97316', green:'#10B981', blue:'#38bdf8', purple:'#a78bfa', red:'#f87171', yellow:'#fbbf24' };
+
+const S = {
+  page:    { minHeight:'100vh', background:'linear-gradient(160deg,#080810 0%,#0f0f1a 60%,#080810 100%)', color:'#e2e8f0', fontFamily:"'DM Sans',system-ui,sans-serif", paddingBottom:40 },
+  wrap:    { maxWidth:500, margin:'0 auto', padding:'0 16px' },
+  card:    { background:'rgba(20,20,35,0.95)', border:'1px solid #1e1e30', borderRadius:16, padding:'16px 18px', marginBottom:14 },
+  sm:      { background:'#0f0f1a', border:'1px solid #1e1e30', borderRadius:12, padding:'12px 14px', marginBottom:10 },
+  input:   { width:'100%', background:'#0a0a14', border:'1px solid #2a2a40', borderRadius:10, color:'#e2e8f0', padding:'11px 14px', fontSize:14, outline:'none', boxSizing:'border-box', fontFamily:'inherit' },
+  select:  { width:'100%', background:'#0a0a14', border:'1px solid #2a2a40', borderRadius:10, color:'#e2e8f0', padding:'11px 14px', fontSize:14, outline:'none', boxSizing:'border-box', fontFamily:'inherit' },
+  ta:      { width:'100%', background:'#0a0a14', border:'1px solid #2a2a40', borderRadius:10, color:'#e2e8f0', padding:'11px 14px', fontSize:14, outline:'none', boxSizing:'border-box', fontFamily:'inherit', resize:'vertical', minHeight:70 },
+  label:   { display:'block', fontSize:11, fontWeight:700, color:'#64748b', marginBottom:6, letterSpacing:'0.6px', textTransform:'uppercase' },
+  field:   { marginBottom:16 },
+  btnP:    { width:'100%', background:'linear-gradient(135deg,#F97316,#ea6c10)', border:'none', color:'#fff', borderRadius:12, padding:14, fontSize:15, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:'inherit' },
+  btnS:    { background:'#1a1a2e', border:'1px solid #2a2a40', color:'#94a3b8', borderRadius:10, padding:'10px 14px', fontSize:13, fontWeight:600, cursor:'pointer', display:'flex', alignItems:'center', gap:6, fontFamily:'inherit' },
+  btnG:    { background:'transparent', border:'none', color:'#64748b', cursor:'pointer', padding:6, borderRadius:8, display:'flex', alignItems:'center', gap:4, fontSize:12, fontFamily:'inherit' },
+  h1:      { fontSize:20, fontWeight:800, letterSpacing:'-0.5px', margin:0 },
+  h2:      { fontSize:16, fontWeight:700, margin:'0 0 14px 0' },
+  pill:    (c) => ({ display:'inline-flex', alignItems:'center', gap:4, background:c+'22', color:c, border:`1px solid ${c}44`, borderRadius:20, padding:'3px 10px', fontSize:11, fontWeight:700 }),
+  warn:    { background:'rgba(251,191,36,0.08)', border:'1px solid rgba(251,191,36,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#fbbf24', marginBottom:12, lineHeight:1.5 },
+  err:     { background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#f87171', marginBottom:12, lineHeight:1.5 },
+  ok:      { background:'rgba(16,185,129,0.08)', border:'1px solid rgba(16,185,129,0.3)', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#10B981', marginBottom:12, lineHeight:1.5 },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+const freshForm = () => ({ sector:'', item:'', customItem:'', value:'', unit:'KES', region:'', market:'', vendorType:'', source:'', notes:'' });
+
+function outlierCheck(item, value) {
+  const key = item.toLowerCase();
+  const med  = PRICE_MEDIANS[key];
+  if (!med || !value) return null;
+  const val  = parseFloat(value);
+  const diff = Math.abs(val - med) / med;
+  if (diff > OUTLIER_PCT) return `Price seems ${val > med ? 'HIGH' : 'LOW'} — typical is KES ${med.toLocaleString()}. Verify with vendor.`;
+  return null;
+}
+
+function isDuplicate(entries, sector, item, region) {
+  const today = new Date().toISOString().split('T')[0];
+  const key   = item.toLowerCase().replace(/\s+/g, '_');
+  return entries.some(e => e.date === today && e.category === sector && e.item === key && e.region_id === region);
+}
+
+function qualityScore(e) {
+  let s = 60;
+  if (e.gps)                                    s += 10;
+  if (e.gps_accuracy != null && e.gps_accuracy < 10)  s += 10;
+  else if (e.gps_accuracy != null && e.gps_accuracy < 50) s += 5;
+  if (e.photo)       s += 10;
+  if (e.source)      s += 5;
+  if (e.vendorType)  s += 5;
+  if (e.notes)       s += 5;
+  return Math.min(s, 100);
+}
+
+function previewQuality(gps, photo, source, vendorType, notes) {
+  return qualityScore({ gps, gps_accuracy: gps?.accuracy, photo, source, vendorType, notes });
+}
+
+function weekDates() {
+  const today = new Date(); const out = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date(today); d.setDate(today.getDate() - i);
+    out.push(d.toISOString().split('T')[0]);
+  }
+  return out;
+}
+
+function timeAgo(ts) {
+  const m = Math.floor((Date.now() - new Date(ts)) / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return `${m}m ago`;
+  if (m < 1440) return `${Math.floor(m/60)}h ago`;
+  return `${Math.floor(m/1440)}d ago`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ROOT COMPONENT
+// ─────────────────────────────────────────────────────────────────────────────
+export default function AfriScout() {
+  // Auth
+  const [collector,     setCollector]     = useState(null);
+  const [loginForm,     setLoginForm]     = useState({ email:'', password:'' });
+  const [loginErr,      setLoginErr]      = useState('');
+  const [loginLoading,  setLoginLoading]  = useState(false);
+
+  // Navigation
+  const [view,   setView]   = useState('collect'); // collect | dashboard | entries | settings
+  const [mode,   setMode]   = useState('field');   // field | survey
+
+  // Connection
+  const [online,  setOnline]  = useState(navigator.onLine);
+  const [syncSt,  setSyncSt]  = useState('idle');   // idle | syncing | done | error
+
+  // Data
+  const [entries,  setEntries]  = useState([]);
+  const [pending,  setPending]  = useState([]);
+  const [todayCnt, setTodayCnt] = useState(0);
+  const [goalBanner, setGoalBanner] = useState(false);
+
+  // Form
+  const [form,   setForm]   = useState(freshForm());
+  const [gps,    setGps]    = useState(null);
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [photo,  setPhoto]  = useState(null);
+  const [photoLabel, setPhotoLabel] = useState('');
+  const [survey, setSurvey] = useState(null);
+  const [surveyR, setSurveyR] = useState({});
+  const [saving, setSaving] = useState(false);
+  const [itemQ,  setItemQ]  = useState('');
+  const [warnings, setWarnings] = useState([]);
+
+  // ── BOOT ──────────────────────────────────────────────────────────────────
   useEffect(() => {
-    const savedEntries = localStorage.getItem('afrifoundry_entries');
-    const savedSectors = localStorage.getItem('afrifoundry_sectors');
-    const savedSurveys = localStorage.getItem('afrifoundry_surveys');
-    
-    if (savedEntries) setEntries(JSON.parse(savedEntries));
-    if (savedSectors) setSectors(JSON.parse(savedSectors));
-    else setSectors(defaultSectors);
-    if (savedSurveys) setSurveyTemplates(JSON.parse(savedSurveys));
-    else setSurveyTemplates(defaultSurveys);
-
-    // Count today's entries
-    const today = new Date().toISOString().split('T')[0];
-    const savedEntryData = savedEntries ? JSON.parse(savedEntries) : [];
-    const todayEntries = savedEntryData.filter(e => 
-      e.temporal?.collected_date === today
-    ).length;
-    setTodayCount(todayEntries);
-
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
-
-    return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
-    };
+    const c = localStorage.getItem('afriscout_v2_collector');
+    if (c) setCollector(JSON.parse(c));
+    const e = localStorage.getItem('afriscout_v2_entries');
+    if (e) { const p = JSON.parse(e); setEntries(p); countToday(p); }
+    const q = localStorage.getItem('afriscout_v2_pending');
+    if (q) setPending(JSON.parse(q));
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('afrifoundry_entries', JSON.stringify(entries));
+    localStorage.setItem('afriscout_v2_entries', JSON.stringify(entries));
+    countToday(entries);
   }, [entries]);
 
-  useEffect(() => {
-    localStorage.setItem('afrifoundry_sectors', JSON.stringify(sectors));
-  }, [sectors]);
+  useEffect(() => { localStorage.setItem('afriscout_v2_pending', JSON.stringify(pending)); }, [pending]);
 
   useEffect(() => {
-    localStorage.setItem('afrifoundry_surveys', JSON.stringify(surveyTemplates));
-  }, [surveyTemplates]);
+    const on  = () => { setOnline(true);  autoSync(); };
+    const off = () => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    return () => { window.removeEventListener('online', on); window.removeEventListener('offline', off); };
+  }, [pending, collector]);
 
-  const getLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const coords = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-            accuracy: position.coords.accuracy
-          };
-          
-          // Validate Kenya boundaries (rough check)
-          if (coords.lat < -5 || coords.lat > 5 || coords.lng < 33 || coords.lng > 42) {
-            alert('⚠️ GPS coordinates seem outside Kenya. Please verify location.');
-          }
-          
-          setGpsCoords(coords);
-          setCurrentEntry({
-            ...currentEntry,
-            location: `${coords.lat.toFixed(6)}, ${coords.lng.toFixed(6)}`
-          });
-        },
-        (error) => {
-          alert('Could not get location. Please check permissions or enter manually.');
-        }
-      );
+  function countToday(list) {
+    const t = new Date().toISOString().split('T')[0];
+    setTodayCnt(list.filter(e => e.date === t).length);
+  }
+
+  // ── LIVE WARNINGS ─────────────────────────────────────────────────────────
+  useEffect(() => {
+    const w = [];
+    const itemName = form.item || form.customItem;
+    if (itemName && form.value) {
+      const o = outlierCheck(itemName, form.value);
+      if (o) w.push('⚠ ' + o);
     }
+    if (itemName && form.sector && form.region && isDuplicate(entries, form.sector, itemName, form.region)) {
+      w.push('⚠ Possible duplicate — same item collected in this region today.');
+    }
+    if (gps && gps.accuracy > 50) {
+      w.push(`⚠ Weak GPS (±${gps.accuracy.toFixed(0)}m). Move to open area for better signal.`);
+    }
+    setWarnings(w);
+  }, [form.item, form.customItem, form.value, form.sector, form.region, gps]);
+
+  // ── LOGIN ──────────────────────────────────────────────────────────────────
+  const doLogin = async () => {
+    if (!loginForm.email) { setLoginErr('Email required'); return; }
+    setLoginLoading(true); setLoginErr('');
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/auth/login`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ email:loginForm.email, password:loginForm.password })
+      });
+      const d = await r.json();
+      if (!r.ok) { setLoginErr(d.detail || 'Login failed'); setLoginLoading(false); return; }
+      const c = { name:d.user.name, email:d.user.email, token:d.token };
+      setCollector(c); localStorage.setItem('afriscout_v2_collector', JSON.stringify(c));
+    } catch {
+      // Offline fallback — still let them collect
+      const c = { name:loginForm.email.split('@')[0], email:loginForm.email, token:null, offline:true };
+      setCollector(c); localStorage.setItem('afriscout_v2_collector', JSON.stringify(c));
+    }
+    setLoginLoading(false);
   };
 
-  const handlePhotoCapture = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      // Compress and convert to base64
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        const base64 = reader.result;
-        setCurrentEntry({
-          ...currentEntry,
-          photo_note: `Photo: ${file.name} (${(file.size / 1024).toFixed(2)}KB)`,
-          photoData: base64
-        });
-      };
-      reader.readAsDataURL(file);
-    }
+  const doLogout = () => {
+    if (!window.confirm('Log out? Unsynced data stays on this device.')) return;
+    localStorage.removeItem('afriscout_v2_collector');
+    setCollector(null); setLoginForm({ email:'', password:'' });
   };
 
-  const validateEntry = () => {
-    const errors = [];
-    
-    if (currentMode === 'field') {
-      if (!currentEntry.sector) errors.push('Sector required');
-      if (!currentEntry.item) errors.push('Item name required');
-      if (!currentEntry.value || parseFloat(currentEntry.value) === 0) {
-        errors.push('Value must be greater than 0');
-      }
-      if (parseFloat(currentEntry.value) > 10000000) {
-        errors.push('Value seems too high. Please verify.');
-      }
-    }
-    
-    if (currentMode === 'survey') {
-      if (!currentEntry.sector) errors.push('Survey template required');
-    }
-    
-    return errors;
+  // ── GPS ────────────────────────────────────────────────────────────────────
+  const getGPS = () => {
+    if (!navigator.geolocation) { alert('GPS not available'); return; }
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        const c = { lat:pos.coords.latitude, lng:pos.coords.longitude, accuracy:pos.coords.accuracy };
+        if (c.lat < -5 || c.lat > 5 || c.lng < 33 || c.lng > 42) alert('⚠ GPS outside Kenya bounds — verify.');
+        setGps(c); setGpsLoading(false);
+      },
+      () => { alert('Could not get GPS. Check permissions.'); setGpsLoading(false); },
+      { enableHighAccuracy:true, timeout:15000, maximumAge:0 }
+    );
   };
 
-  const saveEntry = () => {
-    const errors = validateEntry();
-    if (errors.length > 0) {
-      alert('⚠️ Please fix:\n' + errors.join('\n'));
-      return;
+  // ── PHOTO ──────────────────────────────────────────────────────────────────
+  const handlePhoto = e => {
+    const f = e.target.files[0]; if (!f) return;
+    if (f.size > 15*1024*1024) { alert('Photo too large. Max 15MB.'); return; }
+    const r = new FileReader();
+    r.onloadend = () => { setPhoto(r.result); setPhotoLabel(`${f.name} · ${(f.size/1024).toFixed(0)}KB`); };
+    r.readAsDataURL(f);
+  };
+
+  // ── ITEM SUGGESTIONS ───────────────────────────────────────────────────────
+  const suggestions = () => {
+    if (!form.sector) return [];
+    const all = ITEMS[form.sector] || [];
+    if (!itemQ) return all;
+    return all.filter(i => i.toLowerCase().includes(itemQ.toLowerCase()));
+  };
+
+  // ── VALIDATE ───────────────────────────────────────────────────────────────
+  const validate = () => {
+    const errs = [];
+    if (!form.sector) errs.push('Select a sector');
+    if (!form.region) errs.push('Select a region');
+    if (mode === 'field') {
+      const item = form.item || form.customItem;
+      if (!item.trim()) errs.push('Item name required');
+      if (!form.value || parseFloat(form.value) <= 0) errs.push('Enter a price greater than 0');
+      if (parseFloat(form.value) > 50000000) errs.push('Price too high — please verify');
     }
+    if (mode === 'survey' && !survey) errs.push('Select a survey template');
+    return errs;
+  };
 
-    const today = new Date().toISOString().split('T')[0];
-    const validUntil = new Date(Date.now() + 180*24*60*60*1000).toISOString().split('T')[0];
-    const nextReview = new Date(Date.now() + 90*24*60*60*1000).toISOString().split('T')[0];
+  // ── SAVE ENTRY ─────────────────────────────────────────────────────────────
+  const saveEntry = async () => {
+    const errs = validate();
+    if (errs.length) { alert('⚠ Please fix:\n' + errs.join('\n')); return; }
+    setSaving(true);
 
-    const structuredEntry = {
-      id: `${currentEntry.sector}_${currentMode}_${Date.now()}`,
-      mode: currentMode,
-      category: currentEntry.sector,
-      subcategory: currentMode === 'field' ? 'field_collected' : 'survey_data',
-      item: currentEntry.item?.toLowerCase().replace(/\s+/g, '_') || 'survey_response',
-      value: parseFloat(currentEntry.value) || 0,
-      unit: currentEntry.unit,
-      variance: 0,
-      currency: 'KES',
-      location: {
-        region: 'coast',
-        county: 'mombasa',
-        specificity: 'location_specific',
-        gps: gpsCoords ? `${gpsCoords.lat.toFixed(6)}, ${gpsCoords.lng.toFixed(6)}` : currentEntry.location
-      },
-      temporal: {
-        collected_date: today,
-        valid_until: validUntil,
-        next_review: nextReview
-      },
-      confidence: {
-        score: currentMode === 'field' ? 0.95 : 0.85,
-        level: currentMode === 'field' ? 'high' : 'medium',
-        source_count: 1,
-        field_validated: currentMode === 'field'
-      },
-      sources: [
-        {
-          type: currentEntry.source_type || (currentMode === 'field' ? 'field_observation' : 'survey'),
-          name: currentEntry.source_name || 'Field collection',
-          value: parseFloat(currentEntry.value) || 0,
-          date: today,
-          method: currentMode === 'field' ? 'in_person_verification' : 'survey_response',
-          gps_coords: gpsCoords ? `${gpsCoords.lat.toFixed(6)}, ${gpsCoords.lng.toFixed(6)}` : null
-        }
-      ],
-      context: {
-        notes: currentEntry.notes,
-        photo_reference: currentEntry.photo_note,
-        photo_data: currentEntry.photoData,
-        survey_responses: currentMode === 'survey' ? currentEntry.surveyResponses : null,
-        collected_by: 'AfriFoundry Data Collection v' + APP_VERSION,
-        mode: currentMode,
-        offline_collected: !isOnline
-      },
-      temis_relevance: {
-        economic: currentMode === 'field' ? 'Field-validated price point' : 'User-reported data',
-        technical: 'Real-world availability confirmed'
-      }
+    const today   = new Date().toISOString().split('T')[0];
+    const itemRaw = (form.item || form.customItem).trim();
+    const reg     = REGIONS.find(r => r.id === form.region);
+
+    const entry = {
+      id:               `${form.sector}_${Date.now()}`,
+      date:             today,
+      timestamp:        new Date().toISOString(),
+      mode,
+      category:         form.sector,
+      item:             itemRaw.toLowerCase().replace(/\s+/g, '_'),
+      item_display:     itemRaw,
+      value:            parseFloat(form.value) || 0,
+      unit:             form.unit,
+      currency:         'KES',
+      region:           reg?.name || form.region,
+      region_id:        form.region,
+      county:           form.market || reg?.name,
+      market:           form.market,
+      gps:              gps ? `${gps.lat.toFixed(6)},${gps.lng.toFixed(6)}` : null,
+      gps_accuracy:     gps?.accuracy ?? null,
+      vendor_type:      form.vendorType,
+      source:           form.source,
+      notes:            form.notes,
+      photo,
+      photo_label:      photoLabel,
+      survey_responses: mode === 'survey' ? surveyR : null,
+      confidence_score: mode === 'field' ? 0.95 : 0.85,
+      collected_by:     collector?.name,
+      collected_by_email: collector?.email,
+      synced:           false,
+      valid_until:      new Date(Date.now()+180*86400000).toISOString().split('T')[0],
     };
+    entry.quality_score = qualityScore(entry);
 
-    setEntries([...entries, structuredEntry]);
-    setTodayCount(todayCount + 1);
-    
-    // Check if goal reached
-    if (todayCount + 1 >= GOAL_PER_DAY) {
-      setShowSuccess(true);
-      setTimeout(() => setShowSuccess(false), 3000);
+    setEntries(prev => [...prev, entry]);
+
+    if (todayCnt + 1 >= GOAL_DAY) { setGoalBanner(true); setTimeout(() => setGoalBanner(false), 4000); }
+
+    if (online && collector?.token) {
+      const ok = await syncEntry(entry, collector.token);
+      if (ok) setEntries(prev => prev.map(e => e.id === entry.id ? { ...e, synced:true } : e));
+      else setPending(prev => [...prev, entry]);
+    } else {
+      setPending(prev => [...prev, entry]);
     }
-    
-    // Reset form
-    setCurrentEntry({
-      mode: currentMode,
-      sector: '',
-      item: '',
-      value: '',
-      unit: 'KES',
-      location: '',
-      source_name: '',
-      source_type: '',
-      notes: '',
-      photo_note: '',
-      photoData: null,
-      surveyResponses: {},
-      timestamp: new Date().toISOString()
-    });
-    setGpsCoords(null);
+
+    // Reset
+    setForm(freshForm()); setGps(null); setPhoto(null); setPhotoLabel('');
+    setSurvey(null); setSurveyR({}); setItemQ(''); setWarnings([]);
+    setSaving(false);
   };
 
-  const deleteEntry = (index) => {
-    if (confirm('Delete this entry?')) {
-      setEntries(entries.filter((_, i) => i !== index));
-    }
+  // ── SYNC ───────────────────────────────────────────────────────────────────
+  const syncEntry = async (entry, token) => {
+    try {
+      const r = await fetch(`${API_BASE}/api/v1/collector/submit`, {
+        method:'POST',
+        headers:{ Authorization:`Bearer ${token}`, 'Content-Type':'application/json' },
+        body: JSON.stringify({
+          item:entry.item, value:entry.value, unit:entry.unit, currency:'KES',
+          category:entry.category, subcategory: entry.mode==='field'?'field_collected':'survey_data',
+          region:entry.region, county:entry.county, gps_coords:entry.gps,
+          confidence_score:entry.confidence_score,
+          source_name:entry.source, source_type:entry.mode==='field'?'field_observation':'survey',
+          vendor_type:entry.vendor_type, context_summary:entry.notes,
+          survey_responses:entry.survey_responses, collected_by:entry.collected_by,
+          valid_until:entry.valid_until, offline_collected:!online,
+        }),
+      });
+      return r.ok;
+    } catch { return false; }
   };
 
+  const autoSync = async () => {
+    if (!pending.length || !collector?.token) return;
+    setSyncSt('syncing');
+    const still = [];
+    for (const e of pending) {
+      const ok = await syncEntry(e, collector.token);
+      if (ok) setEntries(prev => prev.map(x => x.id === e.id ? { ...x, synced:true } : x));
+      else still.push(e);
+    }
+    setPending(still);
+    setSyncSt(still.length === 0 ? 'done' : 'error');
+    setTimeout(() => setSyncSt('idle'), 3000);
+  };
+
+  // ── EXPORT ─────────────────────────────────────────────────────────────────
   const exportJSON = () => {
-    const jsonString = JSON.stringify(entries, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `afrifoundry_data_${new Date().toISOString().split('T')[0]}.json`;
-    a.click();
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(entries,null,2)],{type:'application/json'}));
+    a.download = `afriscout_${new Date().toISOString().split('T')[0]}.json`; a.click();
   };
 
   const exportCSV = () => {
-    if (entries.length === 0) {
-      alert('No data to export');
-      return;
-    }
-    
-    const headers = ['Date', 'Sector', 'Item', 'Value', 'Unit', 'Location', 'Source', 'Confidence', 'Mode'];
+    if (!entries.length) { alert('No data to export'); return; }
+    const h = ['Date','Mode','Sector','Item','Value','Unit','Region','Market','GPS','GPS_Accuracy_m','Vendor_Type','Source','Quality_Score','Confidence','Synced','Notes'];
     const rows = entries.map(e => [
-      e.temporal.collected_date,
-      e.category,
-      e.item,
-      e.value,
-      e.unit,
-      e.location.gps || e.location.region,
-      e.sources[0].name,
-      (e.confidence.score * 100).toFixed(0) + '%',
-      e.mode
+      e.date, e.mode, e.category, e.item_display||e.item,
+      e.value, e.unit, e.region, e.market||'',
+      e.gps||'', e.gps_accuracy?.toFixed(0)||'',
+      e.vendor_type||'', e.source||'',
+      e.quality_score||0, Math.round(e.confidence_score*100)+'%',
+      e.synced?'Yes':'No', (e.notes||'').replace(/,/g,';'),
     ]);
-    
-    const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([[h,...rows].map(r=>r.join(',')).join('\n')],{type:'text/csv'});
     const a = document.createElement('a');
-    a.href = url;
-    a.download = `afrifoundry_data_${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
+    a.href = URL.createObjectURL(blob);
+    a.download = `afriscout_${new Date().toISOString().split('T')[0]}.csv`; a.click();
   };
 
-  const shareData = () => {
-    const message = `AfriFoundry Data Collection\n\nTotal entries: ${entries.length}\nField data: ${entries.filter(e => e.mode === 'field').length}\nSurveys: ${entries.filter(e => e.mode === 'survey').length}\n\nCollected with AfriFoundry Data Collector v${APP_VERSION}`;
-    
-    if (navigator.share) {
-      navigator.share({
-        title: 'AfriFoundry Data',
-        text: message
-      });
-    } else {
-      alert('Share not supported on this device');
-    }
+  const delEntry = id => {
+    if (!window.confirm('Delete this entry?')) return;
+    setEntries(entries.filter(e => e.id !== id));
+    setPending(pending.filter(e => e.id !== id));
   };
 
-  const copyToClipboard = () => {
-    const jsonString = JSON.stringify(entries, null, 2);
-    navigator.clipboard.writeText(jsonString);
-    alert('✅ JSON copied!');
-  };
-
-  const addSector = () => {
-    if (!newSector.id || !newSector.name) {
-      alert('⚠️ Please fill sector ID and name');
-      return;
-    }
-    setSectors([...sectors, { ...newSector, color: 'bg-indigo-600' }]);
-    setNewSector({ id: '', name: '', icon: '' });
-  };
-
-  const deleteSector = (sectorId) => {
-    if (confirm('Delete this sector?')) {
-      setSectors(sectors.filter(s => s.id !== sectorId));
-    }
-  };
-
-  const clearAllData = () => {
-    if (confirm('⚠️ WARNING: Delete ALL data?')) {
-      if (confirm('Really? This cannot be undone!')) {
-        setEntries([]);
-        setTodayCount(0);
-        localStorage.removeItem('afrifoundry_entries');
-      }
-    }
-  };
-
-  const importData = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        try {
-          const imported = JSON.parse(event.target.result);
-          if (Array.isArray(imported)) {
-            setEntries([...entries, ...imported]);
-            alert(`✅ Imported ${imported.length} entries`);
-          } else {
-            alert('⚠️ Invalid JSON format');
-          }
-        } catch (err) {
-          alert('⚠️ Error reading file');
-        }
-      };
-      reader.readAsText(file);
-    }
-  };
-
-  const renderSurveyForm = (template) => {
-    return (
-      <div className="space-y-4">
-        <h3 className="text-lg font-semibold">{template.name}</h3>
-        <p className="text-sm text-gray-400">{template.description}</p>
-        
-        {template.questions.map(question => (
-          <div key={question.id} className="bg-gray-900 rounded-lg p-4">
-            <label className="block text-sm font-medium mb-2">
-              {question.text}
-              {question.unit && <span className="text-gray-400"> ({question.unit})</span>}
-            </label>
-            
-            {question.type === 'text' && (
-              <input
-                type="text"
-                onChange={(e) => setCurrentEntry({
-                  ...currentEntry,
-                  surveyResponses: {
-                    ...currentEntry.surveyResponses,
-                    [question.id]: e.target.value
-                  }
-                })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-              />
-            )}
-            
-            {question.type === 'number' && (
-              <input
-                type="number"
-                onChange={(e) => setCurrentEntry({
-                  ...currentEntry,
-                  surveyResponses: {
-                    ...currentEntry.surveyResponses,
-                    [question.id]: e.target.value
-                  }
-                })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-              />
-            )}
-            
-            {question.type === 'select' && (
-              <select
-                onChange={(e) => setCurrentEntry({
-                  ...currentEntry,
-                  surveyResponses: {
-                    ...currentEntry.surveyResponses,
-                    [question.id]: e.target.value
-                  }
-                })}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-              >
-                <option value="">Select...</option>
-                {question.options.map(opt => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            )}
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LOGIN SCREEN
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (!collector) return (
+    <div style={{ ...S.page, display:'flex', alignItems:'center', justifyContent:'center' }}>
+      <div style={{ width:'100%', maxWidth:360, padding:'0 20px' }}>
+        <div style={{ textAlign:'center', marginBottom:32 }}>
+          <div style={{ width:64, height:64, background:'linear-gradient(135deg,#F97316,#c2410c)', borderRadius:20, display:'flex', alignItems:'center', justifyContent:'center', fontSize:32, margin:'0 auto 12px', boxShadow:'0 0 40px rgba(249,115,22,0.25)' }}>🔥</div>
+          <div style={{ fontSize:26, fontWeight:800, color:C.orange, letterSpacing:'-0.5px' }}>AfriScout</div>
+          <div style={{ fontSize:12, color:'#64748b', marginTop:4 }}>AfriFoundry Field Collector v{APP_VERSION}</div>
+        </div>
+        <div style={S.card}>
+          <div style={S.field}>
+            <label style={S.label}>Email</label>
+            <input style={S.input} type="email" placeholder="you@email.com"
+              value={loginForm.email} onChange={e=>setLoginForm({...loginForm,email:e.target.value})}
+              onKeyDown={e=>e.key==='Enter'&&doLogin()} />
           </div>
-        ))}
-      </div>
-    );
-  };
-
-  // Settings View
-  if (currentView === 'settings') {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4">
-        <div className="max-w-4xl mx-auto">
-          <button
-            onClick={() => setCurrentView('collect')}
-            className="mb-4 text-gray-400 hover:text-white"
-          >
-            ← Back
+          <div style={{...S.field,marginBottom:20}}>
+            <label style={S.label}>Password</label>
+            <input style={S.input} type="password" placeholder="••••••••"
+              value={loginForm.password} onChange={e=>setLoginForm({...loginForm,password:e.target.value})}
+              onKeyDown={e=>e.key==='Enter'&&doLogin()} />
+          </div>
+          {loginErr && <div style={S.err}>{loginErr}</div>}
+          <button style={S.btnP} onClick={doLogin} disabled={loginLoading}>
+            {loginLoading ? <RefreshCw size={16} style={{animation:'spin 1s linear infinite'}}/> : <User size={16}/>}
+            {loginLoading ? 'Connecting...' : 'Start Collecting'}
           </button>
-
-          <h1 className="text-3xl font-bold mb-6">⚙️ Settings</h1>
-
-          {/* Manage Sectors */}
-          <div className="bg-gray-800 rounded-lg p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">Manage Sectors</h2>
-            
-            <div className="space-y-2 mb-4">
-              {sectors.map(sector => (
-                <div key={sector.id} className="flex items-center justify-between bg-gray-900 rounded-lg p-3">
-                  <span className="flex items-center gap-2">
-                    <span className="text-2xl">{sector.icon}</span>
-                    <span className="font-medium">{sector.name}</span>
-                  </span>
-                  <button
-                    onClick={() => deleteSector(sector.id)}
-                    className="text-red-400 hover:text-red-300 text-sm"
-                  >
-                    Delete
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            <div className="border-t border-gray-700 pt-4">
-              <h3 className="font-semibold mb-3">Add New Sector</h3>
-              <div className="grid grid-cols-3 gap-2 mb-2">
-                <input
-                  type="text"
-                  placeholder="ID"
-                  value={newSector.id}
-                  onChange={(e) => setNewSector({ ...newSector, id: e.target.value })}
-                  className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Name"
-                  value={newSector.name}
-                  onChange={(e) => setNewSector({ ...newSector, name: e.target.value })}
-                  className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                />
-                <input
-                  type="text"
-                  placeholder="Icon"
-                  value={newSector.icon}
-                  onChange={(e) => setNewSector({ ...newSector, icon: e.target.value })}
-                  className="bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500"
-                />
-              </div>
-              <button
-                onClick={addSector}
-                className="w-full bg-green-600 hover:bg-green-700 py-2 rounded-lg text-sm font-medium"
-              >
-                Add Sector
-              </button>
-            </div>
-          </div>
-
-          {/* Data Management */}
-          <div className="bg-gray-800 rounded-lg p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">Data Management</h2>
-            
-            <div className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span>Total Entries</span>
-                <strong>{entries.length}</strong>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span>Storage Used</span>
-                <strong>{(JSON.stringify(entries).length / 1024).toFixed(2)}KB</strong>
-              </div>
-
-              <div className="border-t border-gray-700 pt-3 space-y-2">
-                <button
-                  onClick={exportJSON}
-                  className="w-full bg-blue-600 hover:bg-blue-700 py-2 rounded-lg flex items-center justify-center gap-2"
-                >
-                  <Download size={18} />
-                  Export JSON
-                </button>
-
-                <button
-                  onClick={exportCSV}
-                  className="w-full bg-green-600 hover:bg-green-700 py-2 rounded-lg flex items-center justify-center gap-2"
-                >
-                  <FileText size={18} />
-                  Export CSV (Excel)
-                </button>
-
-                <label className="w-full bg-purple-600 hover:bg-purple-700 py-2 rounded-lg flex items-center justify-center gap-2 cursor-pointer">
-                  <Upload size={18} />
-                  Import Data
-                  <input
-                    type="file"
-                    accept=".json"
-                    onChange={importData}
-                    className="hidden"
-                  />
-                </label>
-
-                <button
-                  onClick={clearAllData}
-                  className="w-full bg-red-600 hover:bg-red-700 py-2 rounded-lg flex items-center justify-center gap-2"
-                >
-                  <Trash2 size={18} />
-                  Clear All Data
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* About */}
-          <div className="bg-gray-800 rounded-lg p-6">
-            <h2 className="text-xl font-semibold mb-2">About</h2>
-            <p className="text-sm text-gray-400 mb-3">
-              AfriFoundry Data Collector Pro
-            </p>
-            <div className="text-xs text-gray-500 space-y-1">
-              <div>Version: {APP_VERSION}</div>
-              <div>Developer: Mark Gakuya</div>
-              <div>Company: AfriFoundry AI</div>
-              <div>Purpose: Ground-truth African innovation data collection</div>
-            </div>
-          </div>
+        </div>
+        <div style={{ textAlign:'center', fontSize:11, color:'#334155', marginTop:12 }}>
+          Works offline · Data syncs automatically · Never loses data
         </div>
       </div>
-    );
-  }
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
 
-  // Entries View
-  if (currentView === 'entries') {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DASHBOARD VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (view === 'dashboard') {
+    const wd       = weekDates();
+    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const wCounts  = wd.map(d => entries.filter(e=>e.date===d).length);
+    const maxDay   = Math.max(...wCounts, 1);
+    const synced   = entries.filter(e=>e.synced).length;
+    const avgQ     = entries.length ? Math.round(entries.reduce((s,e)=>s+(e.quality_score||0),0)/entries.length) : 0;
+    const totalPct = Math.min(Math.round((entries.length/GOAL_TOTAL)*100),100);
+    const secCounts= {};
+    entries.forEach(e=>{ secCounts[e.category]=(secCounts[e.category]||0)+1; });
+    const topSecs  = Object.entries(secCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    const todayAll = new Date().toISOString().split('T')[0];
+
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4">
-        <div className="max-w-4xl mx-auto">
-          <button
-            onClick={() => setCurrentView('collect')}
-            className="mb-4 text-gray-400 hover:text-white"
-          >
-            ← Back
-          </button>
+      <div style={S.page}>
+        <div style={S.wrap}>
+          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'18px 0 14px' }}>
+            <button style={S.btnG} onClick={()=>setView('collect')}>← Back</button>
+            <span style={S.h1}>Dashboard</span>
+          </div>
 
-          <div className="flex items-center justify-between mb-6">
-            <h1 className="text-3xl font-bold">📊 Data ({entries.length})</h1>
-            <div className="flex gap-2">
-              <button
-                onClick={shareData}
-                className="bg-purple-600 hover:bg-purple-700 px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-              >
-                <Share2 size={16} />
-              </button>
-              <button
-                onClick={copyToClipboard}
-                className="bg-blue-600 hover:bg-blue-700 px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-              >
-                <CheckCircle size={16} />
-              </button>
-              <button
-                onClick={exportJSON}
-                className="bg-green-600 hover:bg-green-700 px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-              >
-                <Download size={16} />
-              </button>
+          {/* Big goal */}
+          <div style={{ ...S.card, background:'linear-gradient(135deg,rgba(249,115,22,0.1),rgba(16,185,129,0.06))', border:'1px solid rgba(249,115,22,0.2)' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
+              <span style={{ fontWeight:700, fontSize:13 }}>10,000 Datapoint Goal</span>
+              <span style={{ fontWeight:800, color:C.orange }}>{totalPct}%</span>
+            </div>
+            <div style={{ background:'rgba(0,0,0,0.3)', borderRadius:6, height:10, overflow:'hidden', marginBottom:8 }}>
+              <div style={{ width:totalPct+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:6, transition:'width 0.6s' }}/>
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#64748b', fontFamily:'Space Mono,monospace' }}>
+              <span>{entries.length.toLocaleString()} collected</span>
+              <span>{(GOAL_TOTAL-entries.length).toLocaleString()} to go</span>
             </div>
           </div>
 
-          {/* Statistics */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
-            <div className="bg-gray-800 rounded-lg p-4">
-              <p className="text-gray-400 text-sm">Field Data</p>
-              <p className="text-2xl font-bold text-green-400">
-                {entries.filter(e => e.mode === 'field').length}
-              </p>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-4">
-              <p className="text-gray-400 text-sm">Surveys</p>
-              <p className="text-2xl font-bold text-purple-400">
-                {entries.filter(e => e.mode === 'survey').length}
-              </p>
-            </div>
-            <div className="bg-gray-800 rounded-lg p-4">
-              <p className="text-gray-400 text-sm">Avg Confidence</p>
-              <p className="text-2xl font-bold text-blue-400">
-                {entries.length > 0 ? 
-                  (entries.reduce((sum, e) => sum + e.confidence.score, 0) / entries.length * 100).toFixed(0) 
-                  : 0}%
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {entries.length === 0 ? (
-              <div className="bg-gray-800 rounded-lg p-12 text-center">
-                <p className="text-gray-400 mb-4">No entries yet</p>
-                <button
-                  onClick={() => setCurrentView('collect')}
-                  className="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded-lg"
-                >
-                  Start Collecting
-                </button>
+          {/* Stats */}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+            {[
+              { l:'Today',         v:todayCnt,           sub:`/${GOAL_DAY} goal`,  c:C.orange },
+              { l:'Total',         v:entries.length,     sub:'all time',           c:C.blue },
+              { l:'Avg Quality',   v:avgQ+'%',           sub:'per entry',          c:C.green },
+              { l:'Synced',        v:synced,             sub:`of ${entries.length}`, c:C.purple },
+            ].map(s=>(
+              <div key={s.l} style={S.card}>
+                <div style={{ fontSize:26, fontWeight:800, color:s.c, letterSpacing:'-0.5px' }}>{s.v}</div>
+                <div style={{ fontSize:12, color:'#94a3b8', fontWeight:600 }}>{s.l}</div>
+                <div style={{ fontSize:11, color:'#475569', fontFamily:'Space Mono,monospace' }}>{s.sub}</div>
               </div>
-            ) : (
-              entries.map((entry, index) => (
-                <div key={index} className="bg-gray-800 rounded-lg p-4 border border-gray-700">
-                  <div className="flex items-start justify-between mb-2">
-                    <div>
-                      <h3 className="font-semibold text-lg">
-                        {entry.mode === 'survey' ? '📋 Survey' : entry.item.replace(/_/g, ' ')}
-                      </h3>
-                      <p className="text-sm text-gray-400">
-                        {entry.category} • {entry.sources[0].name}
-                      </p>
+            ))}
+          </div>
+
+          {/* Weekly bar chart */}
+          <div style={S.card}>
+            <div style={S.h2}>This Week</div>
+            <div style={{ display:'flex', alignItems:'flex-end', gap:6, height:90 }}>
+              {wd.map((d,i)=>{
+                const cnt    = wCounts[i];
+                const pct    = (cnt/maxDay)*100;
+                const isToday= d===todayAll;
+                return (
+                  <div key={d} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
+                    <div style={{ fontSize:10, color:C.orange, fontWeight:700, minHeight:14 }}>{cnt||''}</div>
+                    <div style={{ width:'100%', background:'#0a0a14', borderRadius:4, height:64, display:'flex', alignItems:'flex-end', overflow:'hidden' }}>
+                      <div style={{ width:'100%', height:Math.max(pct,3)+'%', background:isToday?C.orange:'#2a2a40', borderRadius:4, opacity:cnt===0?0.3:1, transition:'height 0.6s' }}/>
                     </div>
-                    <div className="flex items-center gap-2">
-                      {entry.mode === 'field' && (
-                        <span className="text-xl font-bold text-green-400">
-                          {entry.unit === 'KES' ? 'KES ' : ''}{entry.value.toLocaleString()}
-                        </span>
-                      )}
-                      <button
-                        onClick={() => deleteEntry(index)}
-                        className="text-red-400 hover:text-red-300"
-                      >
-                        <Trash2 size={18} />
-                      </button>
-                    </div>
+                    <div style={{ fontSize:10, color:isToday?C.orange:'#475569', fontWeight:isToday?700:400 }}>{dayNames[new Date(d).getDay()]}</div>
                   </div>
-                  
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <span className="bg-gray-900 px-2 py-1 rounded">
-                      📍 {entry.location.gps || entry.location.region}
-                    </span>
-                    <span className={`px-2 py-1 rounded ${entry.confidence.field_validated ? 'bg-green-900 text-green-300' : 'bg-blue-900 text-blue-300'}`}>
-                      {entry.confidence.field_validated ? '✓ Field' : '📋 Survey'} ({(entry.confidence.score * 100).toFixed(0)}%)
-                    </span>
-                    {entry.context.photo_data && (
-                      <span className="bg-purple-900 px-2 py-1 rounded text-purple-300">
-                        📸 Photo
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Main Collect View
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-white p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header with Logo */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-blue-500 rounded-lg flex items-center justify-center text-2xl">
-                🔥
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-green-400 to-blue-500 bg-clip-text text-transparent">
-                  AfriFoundry
-                </h1>
-                <p className="text-xs text-gray-400">Data Collector Pro v{APP_VERSION}</p>
-              </div>
+                );
+              })}
             </div>
-            <p className="text-sm text-gray-400">
-              {isOnline ? <span className="text-green-400">● Online</span> : <span className="text-orange-400">● Offline</span>}
-            </p>
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:10, fontSize:11, color:'#475569', fontFamily:'Space Mono,monospace' }}>
+              <span>Field: {entries.filter(e=>e.mode==='field').length}</span>
+              <span>Surveys: {entries.filter(e=>e.mode==='survey').length}</span>
+              <span>Week total: {wCounts.reduce((a,b)=>a+b,0)}</span>
+            </div>
           </div>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setCurrentView('entries')}
-              className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg relative"
-            >
-              <List size={20} />
-              {entries.length > 0 && (
-                <span className="absolute -top-1 -right-1 bg-green-500 text-xs w-5 h-5 rounded-full flex items-center justify-center">
-                  {entries.length}
-                </span>
-              )}
-            </button>
-            <button
-              onClick={() => setCurrentView('settings')}
-              className="bg-gray-700 hover:bg-gray-600 p-2 rounded-lg"
-            >
-              <Settings size={20} />
-            </button>
-          </div>
-        </div>
 
-        {/* Today's Goal */}
-        <div className="bg-gradient-to-r from-green-600 to-blue-600 rounded-lg p-4 mb-6">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">Today's Goal</span>
-            <span className="text-sm">{todayCount}/{GOAL_PER_DAY}</span>
-          </div>
-          <div className="w-full bg-gray-800/50 rounded-full h-2">
-            <div
-              className="bg-white h-2 rounded-full transition-all"
-              style={{ width: `${Math.min((todayCount / GOAL_PER_DAY) * 100, 100)}%` }}
-            />
-          </div>
-          {todayCount >= GOAL_PER_DAY && (
-            <p className="text-xs mt-2 text-white/90">🎉 Goal reached! Great work!</p>
+          {/* Sector breakdown */}
+          {topSecs.length > 0 && (
+            <div style={S.card}>
+              <div style={S.h2}>Sector Coverage</div>
+              {topSecs.map(([sec,cnt])=>{
+                const s   = SECTORS.find(x=>x.id===sec);
+                const pct = Math.round((cnt/entries.length)*100);
+                return (
+                  <div key={sec} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                    <span style={{ fontSize:18, width:24 }}>{s?.icon||'📦'}</span>
+                    <span style={{ fontSize:12, color:'#94a3b8', width:86, flexShrink:0, fontWeight:600 }}>{s?.name||sec}</span>
+                    <div style={{ flex:1, background:'#0a0a14', borderRadius:4, height:7, overflow:'hidden' }}>
+                      <div style={{ width:pct+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:4 }}/>
+                    </div>
+                    <span style={{ fontSize:11, color:'#475569', width:30, textAlign:'right', fontFamily:'Space Mono,monospace' }}>{cnt}</span>
+                  </div>
+                );
+              })}
+            </div>
           )}
+
+          {/* Recent */}
+          <div style={S.card}>
+            <div style={S.h2}>Recent Activity</div>
+            {entries.slice(-5).reverse().map(e=>(
+              <div key={e.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+                <div>
+                  <div style={{ fontSize:13, fontWeight:600 }}>{e.item_display||e.item.replace(/_/g,' ')}</div>
+                  <div style={{ fontSize:10, color:'#64748b' }}>{e.category} · {e.region}</div>
+                </div>
+                <div style={{ textAlign:'right' }}>
+                  {e.mode==='field' && <div style={{ fontSize:14, fontWeight:800, color:C.green }}>KES {e.value.toLocaleString()}</div>}
+                  <div style={{ fontSize:10, color:'#475569', fontFamily:'Space Mono,monospace' }}>{timeAgo(e.timestamp)}</div>
+                </div>
+              </div>
+            ))}
+            {entries.length===0 && <div style={{ color:'#475569', fontSize:13, textAlign:'center', padding:'16px 0' }}>No entries yet</div>}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ENTRIES VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (view === 'entries') return (
+    <div style={S.page}>
+      <div style={S.wrap}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'18px 0 14px' }}>
+          <button style={S.btnG} onClick={()=>setView('collect')}>← Back</button>
+          <span style={{ ...S.h1, flex:1 }}>All Entries ({entries.length})</span>
+          <button style={S.btnG} onClick={exportJSON}><Download size={15}/> JSON</button>
+          <button style={S.btnG} onClick={exportCSV}><Download size={15}/> CSV</button>
         </div>
 
-        {/* Success Message */}
-        {showSuccess && (
-          <div className="bg-green-600 rounded-lg p-4 mb-6 animate-pulse">
-            <div className="flex items-center gap-3">
-              <Award size={24} />
-              <div>
-                <p className="font-semibold">🎉 Daily Goal Achieved!</p>
-                <p className="text-sm text-green-100">Excellent work collecting data today!</p>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, marginBottom:14 }}>
+          {[
+            { l:'Field',    v:entries.filter(e=>e.mode==='field').length,   c:C.green },
+            { l:'Surveys',  v:entries.filter(e=>e.mode==='survey').length,  c:C.purple },
+            { l:'Unsynced', v:entries.filter(e=>!e.synced).length,          c:C.orange },
+          ].map(s=>(
+            <div key={s.l} style={{ ...S.sm, textAlign:'center', marginBottom:0 }}>
+              <div style={{ fontSize:20, fontWeight:800, color:s.c }}>{s.v}</div>
+              <div style={{ fontSize:11, color:'#64748b' }}>{s.l}</div>
+            </div>
+          ))}
+        </div>
+
+        {pending.length>0 && online && (
+          <div style={{ ...S.card, display:'flex', alignItems:'center', gap:10, background:'rgba(249,115,22,0.06)', border:'1px solid rgba(249,115,22,0.2)' }}>
+            <span style={{ flex:1, fontSize:13 }}>{pending.length} waiting to sync</span>
+            <button style={{ ...S.btnS, padding:'6px 12px', fontSize:12 }} onClick={autoSync}>
+              {syncSt==='syncing'?<RefreshCw size={14} style={{animation:'spin 1s linear infinite'}}/>:'Sync Now'}
+            </button>
+          </div>
+        )}
+
+        {entries.length===0
+          ? <div style={{ ...S.card, textAlign:'center', padding:'48px 20px' }}>
+              <div style={{ fontSize:36, marginBottom:12 }}>📋</div>
+              <div style={{ color:'#64748b' }}>No entries yet</div>
+              <button style={{ ...S.btnP, marginTop:16 }} onClick={()=>setView('collect')}>Start Collecting</button>
+            </div>
+          : entries.slice().reverse().map(e=>(
+              <div key={e.id} style={S.sm}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:6 }}>
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontWeight:700, fontSize:13 }}>{e.mode==='survey'?'📋 Survey':(e.item_display||e.item.replace(/_/g,' '))}</div>
+                    <div style={{ fontSize:11, color:'#64748b' }}>{e.category} · {e.region}{e.market?` · ${e.market}`:''}</div>
+                  </div>
+                  <div style={{ textAlign:'right', flexShrink:0 }}>
+                    {e.mode==='field' && <div style={{ fontSize:16, fontWeight:800, color:C.green }}>KES {e.value.toLocaleString()}</div>}
+                    <div style={{ fontSize:10, color:e.synced?C.green:'#64748b' }}>{e.synced?'☁ Synced':'📴 Local'}</div>
+                  </div>
+                </div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
+                  <span style={S.pill('#64748b')}>{e.date}</span>
+                  {e.gps && <span style={S.pill(C.green)}>📍 ±{e.gps_accuracy?.toFixed(0)||'?'}m</span>}
+                  {e.photo && <span style={S.pill(C.purple)}>📸</span>}
+                  <span style={S.pill(e.quality_score>=80?C.green:e.quality_score>=60?C.orange:'#64748b')}>Q:{e.quality_score||0}%</span>
+                  <button style={{ ...S.btnG, color:C.red, marginLeft:'auto' }} onClick={()=>delEntry(e.id)}><Trash2 size={14}/></button>
+                </div>
               </div>
+            ))
+        }
+      </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+    </div>
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // SETTINGS VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (view === 'settings') return (
+    <div style={S.page}>
+      <div style={S.wrap}>
+        <div style={{ display:'flex', alignItems:'center', gap:10, padding:'18px 0 14px' }}>
+          <button style={S.btnG} onClick={()=>setView('collect')}>← Back</button>
+          <span style={S.h1}>Settings</span>
+        </div>
+
+        <div style={S.card}>
+          <div style={S.h2}>Collector</div>
+          <div style={{ fontSize:15, fontWeight:700 }}>{collector.name}</div>
+          <div style={{ fontSize:12, color:'#64748b', marginBottom:8 }}>{collector.email}</div>
+          {collector.offline && <span style={S.pill(C.orange)}>Offline Mode</span>}
+        </div>
+
+        <div style={S.card}>
+          <div style={S.h2}>Data</div>
+          {[['Total entries',entries.length],['Synced',entries.filter(e=>e.synced).length],['Pending sync',pending.length],['Storage',(JSON.stringify(entries).length/1024).toFixed(1)+'KB']].map(([l,v])=>(
+            <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:13, padding:'6px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+              <span style={{ color:'#94a3b8' }}>{l}</span>
+              <strong style={{ color:l==='Pending sync'&&v>0?C.orange:'#e2e8f0' }}>{v}</strong>
+            </div>
+          ))}
+          <div style={{ display:'flex', flexDirection:'column', gap:8, marginTop:14 }}>
+            <button style={{ ...S.btnS, justifyContent:'center' }} onClick={exportJSON}><Download size={16}/>Export JSON</button>
+            <button style={{ ...S.btnS, justifyContent:'center' }} onClick={exportCSV}><Download size={16}/>Export CSV</button>
+            {pending.length>0&&online && (
+              <button style={{ background:'rgba(16,185,129,0.12)', border:'1px solid rgba(16,185,129,0.3)', color:C.green, borderRadius:10, padding:12, fontWeight:700, cursor:'pointer', fontSize:13 }} onClick={autoSync}>
+                ☁ Sync {pending.length} Pending
+              </button>
+            )}
+            <button style={{ background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', color:C.red, borderRadius:10, padding:12, fontWeight:700, cursor:'pointer', fontSize:13 }} onClick={()=>{ if(window.confirm('Delete ALL data? Cannot be undone.'))){ setEntries([]); setPending([]); }}}>
+              🗑 Clear All Data
+            </button>
+          </div>
+        </div>
+
+        <div style={S.card}>
+          <div style={{ fontSize:12, color:'#64748b', lineHeight:1.8 }}>
+            <strong style={{ color:'#94a3b8' }}>AfriScout v{APP_VERSION}</strong><br/>
+            AfriFoundry Field Data Collector<br/>
+            15 sectors · 225+ items · Offline-first<br/>
+            Mark Gakuya · AfriFoundry Limited
+          </div>
+        </div>
+
+        <button style={{ background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', color:C.red, borderRadius:12, padding:14, fontWeight:700, cursor:'pointer', fontSize:14, width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:'inherit' }} onClick={doLogout}>
+          <LogOut size={16}/>Log Out
+        </button>
+      </div>
+    </div>
+  );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MAIN COLLECT VIEW
+  // ═══════════════════════════════════════════════════════════════════════════
+  const pct    = Math.min((todayCnt/GOAL_DAY)*100, 100);
+  const reg    = REGIONS.find(r=>r.id===form.region);
+  const suggs  = suggestions();
+  const qPrev  = previewQuality(gps, photo, form.source, form.vendorType, form.notes);
+
+  return (
+    <div style={S.page}>
+      <div style={S.wrap}>
+
+        {/* HEADER */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 0 12px' }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:4 }}>
+              <div style={{ width:32, height:32, background:'linear-gradient(135deg,#F97316,#c2410c)', borderRadius:9, display:'flex', alignItems:'center', justifyContent:'center', fontSize:17 }}>🔥</div>
+              <span style={{ fontSize:19, fontWeight:800, color:C.orange }}>AfriScout</span>
+            </div>
+            <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+              <span style={S.pill(online?C.green:C.orange)}>{online?'● Online':'● Offline'}</span>
+              {pending.length>0 && <span style={S.pill(C.orange)}>{pending.length} pending</span>}
+              {syncSt==='done' && <span style={S.pill(C.green)}>✓ Synced</span>}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:6 }}>
+            <button style={{ ...S.btnS, padding:'8px 10px' }} onClick={()=>setView('dashboard')}><BarChart2 size={18}/></button>
+            <button style={{ ...S.btnS, padding:'8px 10px', position:'relative' }} onClick={()=>setView('entries')}>
+              <List size={18}/>
+              {entries.length>0 && <span style={{ position:'absolute', top:-6, right:-6, background:C.orange, color:'#fff', fontSize:10, fontWeight:700, width:17, height:17, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center' }}>{entries.length>99?'99+':entries.length}</span>}
+            </button>
+            <button style={{ ...S.btnS, padding:'8px 10px' }} onClick={()=>setView('settings')}><Settings size={18}/></button>
+          </div>
+        </div>
+
+        {/* GOAL BAR */}
+        <div style={{ ...S.card, background:'linear-gradient(135deg,rgba(249,115,22,0.09),rgba(16,185,129,0.05))', border:'1px solid rgba(249,115,22,0.15)', marginBottom:14 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+            <span style={{ fontSize:12, fontWeight:700, color:'#94a3b8' }}>Today's Goal</span>
+            <span style={{ fontSize:12, fontWeight:800, color:todayCnt>=GOAL_DAY?C.green:C.orange }}>{todayCnt} / {GOAL_DAY}</span>
+          </div>
+          <div style={{ background:'rgba(0,0,0,0.3)', borderRadius:6, height:8, overflow:'hidden' }}>
+            <div style={{ width:pct+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:6, transition:'width 0.6s' }}/>
+          </div>
+          {todayCnt>=GOAL_DAY && <div style={{ fontSize:11, color:C.green, marginTop:6, fontWeight:700 }}>🎉 Goal done! Keep going.</div>}
+        </div>
+
+        {goalBanner && (
+          <div style={{ ...S.card, background:'rgba(16,185,129,0.1)', border:'1px solid rgba(16,185,129,0.3)', display:'flex', alignItems:'center', gap:12, marginBottom:14 }}>
+            <Award size={24} color={C.green}/>
+            <div>
+              <div style={{ fontWeight:700, color:C.green }}>Daily Goal Reached! 🎉</div>
+              <div style={{ fontSize:12, color:'#94a3b8' }}>Outstanding field work today.</div>
             </div>
           </div>
         )}
 
-        {/* Mode Selector */}
-        <div className="flex gap-2 mb-6">
-          <button
-            onClick={() => setCurrentMode('field')}
-            className={`flex-1 py-3 rounded-lg font-semibold transition-all ${
-              currentMode === 'field'
-                ? 'bg-gradient-to-r from-green-500 to-blue-500'
-                : 'bg-gray-700 hover:bg-gray-600'
-            }`}
-          >
-            📍 Field Data
-          </button>
-          <button
-            onClick={() => setCurrentMode('survey')}
-            className={`flex-1 py-3 rounded-lg font-semibold transition-all ${
-              currentMode === 'survey'
-                ? 'bg-gradient-to-r from-purple-500 to-pink-500'
-                : 'bg-gray-700 hover:bg-gray-600'
-            }`}
-          >
-            📋 Survey
-          </button>
+        {/* MODE TOGGLE */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:16 }}>
+          {[{id:'field',label:'📍 Field Data',ac:C.orange},{id:'survey',label:'📋 Survey',ac:C.purple}].map(m=>(
+            <button key={m.id} onClick={()=>setMode(m.id)}
+              style={{ ...S.btnS, justifyContent:'center', padding:12, fontWeight:700, fontSize:14, border:`${mode===m.id?'2':'1'}px solid ${mode===m.id?m.ac:'#2a2a40'}`, color:mode===m.id?m.ac:'#64748b', background:mode===m.id?m.ac+'12':'#1a1a2e' }}>
+              {m.label}
+            </button>
+          ))}
         </div>
 
-        {/* Form */}
-        <div className="bg-gray-800 rounded-lg p-6 mb-6">
-          {currentMode === 'field' ? (
-            <>
-              <h2 className="text-xl font-semibold mb-4">Field Data Entry</h2>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Sector *</label>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                  {sectors.map(sector => (
-                    <button
-                      key={sector.id}
-                      onClick={() => setCurrentEntry({ ...currentEntry, sector: sector.id })}
-                      className={`p-3 rounded-lg border-2 transition-all ${
-                        currentEntry.sector === sector.id
-                          ? `${sector.color} border-white`
-                          : 'bg-gray-700 border-gray-600 hover:border-gray-500'
-                      }`}
-                    >
-                      <span className="text-sm font-medium">{sector.icon} {sector.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
+        {/* WARNINGS */}
+        {warnings.map((w,i)=><div key={i} style={S.warn}>{w}</div>)}
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Item Name *</label>
-                <input
-                  type="text"
-                  value={currentEntry.item}
-                  onChange={(e) => setCurrentEntry({ ...currentEntry, item: e.target.value })}
-                  placeholder="H516 Maize Seed"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                />
-              </div>
+        {/* FORM */}
+        <div style={S.card}>
 
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium mb-2">Value *</label>
-                  <input
-                    type="number"
-                    value={currentEntry.value}
-                    onChange={(e) => setCurrentEntry({ ...currentEntry, value: e.target.value })}
-                    placeholder="2400"
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-2">Unit</label>
-                  <select
-                    value={currentEntry.unit}
-                    onChange={(e) => setCurrentEntry({ ...currentEntry, unit: e.target.value })}
-                    className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="KES">KES</option>
-                    <option value="KES_per_kg">KES/kg</option>
-                    <option value="KES_per_acre">KES/acre</option>
-                    <option value="hours">hours</option>
-                    <option value="percent">%</option>
-                  </select>
-                </div>
-              </div>
+          {/* SECTOR */}
+          <div style={S.field}>
+            <label style={S.label}>Sector *</label>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:7 }}>
+              {SECTORS.map(s=>(
+                <button key={s.id} onClick={()=>{ setForm({...form,sector:s.id,item:'',customItem:''}); setItemQ(''); }}
+                  style={{ background:form.sector===s.id?C.orange+'15':'#0a0a14', border:`1px solid ${form.sector===s.id?C.orange:'#2a2a40'}`, borderRadius:9, padding:'8px 4px', cursor:'pointer', color:form.sector===s.id?C.orange:'#64748b', fontSize:11, fontWeight:600, lineHeight:1.3 }}>
+                  <div style={{ fontSize:17, marginBottom:2 }}>{s.icon}</div>{s.name}
+                </button>
+              ))}
+            </div>
+          </div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Source</label>
-                <input
-                  type="text"
-                  value={currentEntry.source_name}
-                  onChange={(e) => setCurrentEntry({ ...currentEntry, source_name: e.target.value })}
-                  placeholder="Bamburi Agro-Vet"
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                />
-              </div>
+          {/* REGION */}
+          <div style={S.field}>
+            <label style={S.label}>Region *</label>
+            <select style={S.select} value={form.region} onChange={e=>setForm({...form,region:e.target.value,market:''})}>
+              <option value="">Select region...</option>
+              {REGIONS.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </div>
 
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Location</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={currentEntry.location}
-                    onChange={(e) => setCurrentEntry({ ...currentEntry, location: e.target.value })}
-                    placeholder="Mombasa, Bamburi"
-                    className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    onClick={getLocation}
-                    className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg flex items-center gap-2"
-                  >
-                    <MapPin size={18} />
-                    GPS
+          {/* MARKET CHIPS */}
+          {reg && (
+            <div style={S.field}>
+              <label style={S.label}>Market / Area</label>
+              <div style={{ display:'flex', flexWrap:'wrap', gap:6 }}>
+                {reg.markets.map(m=>(
+                  <button key={m} onClick={()=>setForm({...form,market:m})}
+                    style={{ background:form.market===m?C.orange+'15':'#0a0a14', border:`1px solid ${form.market===m?C.orange:'#2a2a40'}`, borderRadius:20, padding:'4px 12px', cursor:'pointer', color:form.market===m?C.orange:'#64748b', fontSize:12, fontWeight:600 }}>
+                    {m}
                   </button>
-                </div>
-                {gpsCoords && (
-                  <p className="text-xs text-green-400 mt-1">
-                    ✓ GPS: ±{gpsCoords.accuracy.toFixed(0)}m
-                  </p>
-                )}
+                ))}
               </div>
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Notes</label>
-                <textarea
-                  value={currentEntry.notes}
-                  onChange={(e) => setCurrentEntry({ ...currentEntry, notes: e.target.value })}
-                  placeholder="Observations..."
-                  rows={3}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-sm font-medium mb-2">Photo</label>
-                <label className="w-full bg-gray-700 hover:bg-gray-600 border border-gray-600 rounded-lg px-4 py-2 cursor-pointer flex items-center gap-2">
-                  <Camera size={18} />
-                  <span className="text-sm">{currentEntry.photo_note || 'Capture Photo'}</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    onChange={handlePhotoCapture}
-                    className="hidden"
-                  />
-                </label>
-              </div>
-            </>
-          ) : (
-            <>
-              <h2 className="text-xl font-semibold mb-4">Survey Mode</h2>
-              
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Survey Template *</label>
-                <select
-                  value={currentEntry.sector}
-                  onChange={(e) => setCurrentEntry({ ...currentEntry, sector: e.target.value })}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                >
-                  <option value="">Choose survey...</option>
-                  {surveyTemplates.map(template => (
-                    <option key={template.id} value={template.id}>
-                      {template.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {currentEntry.sector && surveyTemplates.find(t => t.id === currentEntry.sector) && (
-                <div className="mb-6">
-                  {renderSurveyForm(surveyTemplates.find(t => t.id === currentEntry.sector))}
-                </div>
-              )}
-
-              <div className="mb-4">
-                <label className="block text-sm font-medium mb-2">Location</label>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={currentEntry.location}
-                    onChange={(e) => setCurrentEntry({ ...currentEntry, location: e.target.value })}
-                    placeholder="TUM, Mombasa"
-                    className="flex-1 bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    onClick={getLocation}
-                    className="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg"
-                  >
-                    <MapPin size={18} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="mb-6">
-                <label className="block text-sm font-medium mb-2">Notes</label>
-                <textarea
-                  value={currentEntry.notes}
-                  onChange={(e) => setCurrentEntry({ ...currentEntry, notes: e.target.value })}
-                  placeholder="Additional context..."
-                  rows={2}
-                  className="w-full bg-gray-700 border border-gray-600 rounded-lg px-4 py-2 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-            </>
+            </div>
           )}
 
-          <button
-            onClick={saveEntry}
-            className="w-full bg-gradient-to-r from-green-500 to-blue-500 hover:from-green-600 hover:to-blue-600 py-3 rounded-lg font-semibold flex items-center justify-center gap-2"
-          >
-            <Save size={20} />
-            Save {currentMode === 'field' ? 'Field Data' : 'Survey'}
+          {/* ── FIELD MODE ── */}
+          {mode==='field' && <>
+            <div style={S.field}>
+              <label style={S.label}>Item * {form.sector&&<span style={{ color:'#475569', textTransform:'none', fontWeight:400 }}>— {(ITEMS[form.sector]||[]).length} options</span>}</label>
+              {form.sector && (
+                <>
+                  <input style={{ ...S.input, marginBottom:6 }} placeholder={`Search ${form.sector} items...`}
+                    value={itemQ} onChange={e=>setItemQ(e.target.value)} />
+                  {suggs.length>0 && (
+                    <div style={{ background:'#0a0a14', border:'1px solid #2a2a40', borderRadius:10, maxHeight:160, overflowY:'auto', marginBottom:6 }}>
+                      {suggs.slice(0,25).map(item=>(
+                        <div key={item} onClick={()=>{ setForm({...form,item,customItem:''}); setItemQ(item); }}
+                          style={{ padding:'9px 14px', cursor:'pointer', fontSize:13, color:form.item===item?C.orange:'#94a3b8', background:form.item===item?C.orange+'10':'transparent', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
+                          {item}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+              <input style={S.input} placeholder="Or type custom item name..."
+                value={form.customItem} onChange={e=>setForm({...form,customItem:e.target.value,item:''})} />
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'2fr 1fr', gap:10, ...S.field }}>
+              <div>
+                <label style={S.label}>Price / Value *</label>
+                <input style={S.input} type="number" min="0" placeholder="e.g. 1800"
+                  value={form.value} onChange={e=>setForm({...form,value:e.target.value})} />
+              </div>
+              <div>
+                <label style={S.label}>Unit</label>
+                <select style={S.select} value={form.unit} onChange={e=>setForm({...form,unit:e.target.value})}>
+                  {UNITS.map(u=><option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, ...S.field }}>
+              <div>
+                <label style={S.label}>Vendor Type</label>
+                <select style={S.select} value={form.vendorType} onChange={e=>setForm({...form,vendorType:e.target.value})}>
+                  <option value="">Select...</option>
+                  {VENDOR_TYPES.map(v=><option key={v} value={v}>{v}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={S.label}>Vendor Name</label>
+                <input style={S.input} placeholder="e.g. Mama Caro's" value={form.source} onChange={e=>setForm({...form,source:e.target.value})} />
+              </div>
+            </div>
+          </>}
+
+          {/* ── SURVEY MODE ── */}
+          {mode==='survey' && <>
+            <div style={S.field}>
+              <label style={S.label}>Survey Template *</label>
+              {SURVEY_TEMPLATES.map(t=>(
+                <button key={t.id} onClick={()=>{ setSurvey(t); setSurveyR({}); }}
+                  style={{ width:'100%', background:survey?.id===t.id?C.orange+'12':'#0a0a14', border:`1px solid ${survey?.id===t.id?C.orange:'#2a2a40'}`, borderRadius:10, padding:'10px 14px', cursor:'pointer', textAlign:'left', color:survey?.id===t.id?C.orange:'#94a3b8', fontWeight:600, fontSize:13, marginBottom:6, fontFamily:'inherit' }}>
+                  {t.icon} {t.name}
+                </button>
+              ))}
+            </div>
+            {survey && survey.questions.map(q=>(
+              <div key={q.id} style={S.field}>
+                <label style={S.label}>{q.text}{q.unit?` (${q.unit})`:''}</label>
+                {q.type==='text'   && <input  style={S.input}  onChange={e=>setSurveyR({...surveyR,[q.id]:e.target.value})} />}
+                {q.type==='number' && <input  style={S.input} type="number" onChange={e=>setSurveyR({...surveyR,[q.id]:e.target.value})} />}
+                {q.type==='select' && <select style={S.select} onChange={e=>setSurveyR({...surveyR,[q.id]:e.target.value})}>
+                  <option value="">Select...</option>
+                  {q.options.map(o=><option key={o} value={o}>{o}</option>)}
+                </select>}
+              </div>
+            ))}
+          </>}
+
+          {/* NOTES */}
+          <div style={S.field}>
+            <label style={S.label}>Notes / Observations</label>
+            <textarea style={S.ta} placeholder="Seasonal price? Shortage? Anything unusual..." value={form.notes} onChange={e=>setForm({...form,notes:e.target.value})} />
+          </div>
+
+          {/* GPS */}
+          <div style={S.field}>
+            <label style={S.label}>GPS Location</label>
+            <div style={{ display:'flex', gap:8 }}>
+              <div style={{ flex:1, background:'#0a0a14', border:`1px solid ${gps?(gps.accuracy<10?C.green:gps.accuracy<50?C.orange:C.red):'#2a2a40'}`, borderRadius:10, padding:'11px 14px', fontSize:13, color:gps?C.green:'#475569' }}>
+                {gps ? `✓ ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)} · ±${gps.accuracy.toFixed(0)}m` : 'No GPS yet'}
+              </div>
+              <button style={{ ...S.btnS, padding:'0 14px', flexShrink:0 }} onClick={getGPS} disabled={gpsLoading}>
+                {gpsLoading?<RefreshCw size={16} style={{animation:'spin 1s linear infinite'}}/>:<MapPin size={16}/>} GPS
+              </button>
+            </div>
+            {gps && <div style={{ fontSize:10, marginTop:4, color:gps.accuracy<10?C.green:gps.accuracy<50?C.orange:C.red }}>
+              {gps.accuracy<10?'✓ Excellent (<10m)':gps.accuracy<50?'⚠ Moderate — acceptable':'⚠ Weak signal — move to open area'}
+            </div>}
+          </div>
+
+          {/* PHOTO */}
+          <div style={{ ...S.field, marginBottom:20 }}>
+            <label style={S.label}>Photo Evidence {mode==='field'?'(Recommended)':''}</label>
+            <label style={{ ...S.btnS, cursor:'pointer', justifyContent:'center', width:'100%', boxSizing:'border-box', borderStyle:photo?'solid':'dashed', borderColor:photo?C.green:'#2a2a40', color:photo?C.green:'#64748b' }}>
+              <Camera size={16}/>
+              {photo ? `✓ ${photoLabel}` : 'Capture / Choose Photo'}
+              <input type="file" accept="image/*" capture="environment" onChange={handlePhoto} style={{ display:'none' }}/>
+            </label>
+            {photo && <div style={{ fontSize:10, color:'#64748b', marginTop:4 }}>Make sure price is clearly visible. No blur.</div>}
+          </div>
+
+          {/* QUALITY PREVIEW */}
+          {(form.sector&&form.region) && (
+            <div style={{ ...S.sm, display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
+              <Shield size={16} color={C.orange}/>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:10, color:'#64748b', marginBottom:4 }}>Quality score preview</div>
+                <div style={{ background:'#0a0a14', borderRadius:4, height:5, overflow:'hidden' }}>
+                  <div style={{ width:qPrev+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:4 }}/>
+                </div>
+              </div>
+              <div style={{ fontSize:14, fontWeight:800, color:qPrev>=80?C.green:qPrev>=60?C.orange:C.red, fontFamily:'Space Mono,monospace' }}>{qPrev}%</div>
+            </div>
+          )}
+
+          {/* SAVE */}
+          <button style={S.btnP} onClick={saveEntry} disabled={saving}>
+            {saving?<RefreshCw size={18} style={{animation:'spin 1s linear infinite'}}/>:<Save size={18}/>}
+            {saving?'Saving...': `Save ${mode==='field'?'Field Data':'Survey'}`}
           </button>
+
+          {syncSt!=='idle' && (
+            <div style={{ textAlign:'center', fontSize:12, marginTop:10, color:syncSt==='done'?C.green:syncSt==='error'?C.red:C.orange }}>
+              {syncSt==='syncing'&&'☁ Syncing to AfriFoundry...'}
+              {syncSt==='done'&&'✅ Synced to server'}
+              {syncSt==='error'&&'⚠ Some entries failed — will retry automatically'}
+            </div>
+          )}
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-3 gap-4">
-          <div className="bg-gray-800 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Total</p>
-            <p className="text-2xl font-bold">{entries.length}</p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Field</p>
-            <p className="text-2xl font-bold text-green-400">
-              {entries.filter(e => e.mode === 'field').length}
-            </p>
-          </div>
-          <div className="bg-gray-800 rounded-lg p-4">
-            <p className="text-gray-400 text-sm">Surveys</p>
-            <p className="text-2xl font-bold text-purple-400">
-              {entries.filter(e => e.mode === 'survey').length}
-            </p>
-          </div>
+        {/* QUICK STATS */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
+          {[{l:'Total',v:entries.length,c:C.orange},{l:'Field',v:entries.filter(e=>e.mode==='field').length,c:C.green},{l:'Surveys',v:entries.filter(e=>e.mode==='survey').length,c:C.purple}].map(s=>(
+            <div key={s.l} style={{ ...S.sm, textAlign:'center', marginBottom:0 }}>
+              <div style={{ fontSize:20, fontWeight:800, color:s.c }}>{s.v}</div>
+              <div style={{ fontSize:11, color:'#64748b' }}>{s.l}</div>
+            </div>
+          ))}
         </div>
 
-        {/* Footer */}
-        <div className="mt-6 text-center text-xs text-gray-500">
-          <p>AfriFoundry Data Collector Pro • v{APP_VERSION}</p>
-          <p className="mt-1">Building Africa's Innovation Intelligence Database</p>
+        <div style={{ textAlign:'center', fontSize:11, color:'#334155', marginTop:16 }}>
+          AfriScout v{APP_VERSION} · 15 sectors · 225+ items · Offline-first
         </div>
       </div>
+      <style>{`@keyframes spin{to{transform:rotate(360deg)}} *{-webkit-tap-highlight-color:transparent}`}</style>
     </div>
   );
-};
-
-export default DataCollectorPro;
+}
