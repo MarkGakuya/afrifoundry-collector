@@ -907,7 +907,7 @@ export default function AfriScout() {
                 ☁ Sync {pending.length} Pending
               </button>
             )}
-            <button style={{ background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', color:C.red, borderRadius:10, padding:12, fontWeight:700, cursor:'pointer', fontSize:13 }} onClick={()=>{ if(window.confirm('Delete ALL data? Cannot be undone.'))){ setEntries([]); setPending([]); }}}>
+            <button style={{ background:'rgba(248,113,113,0.08)', border:'1px solid rgba(248,113,113,0.3)', color:C.red, borderRadius:10, padding:12, fontWeight:700, cursor:'pointer', fontSize:13 }} onClick={()=>{ if(window.confirm('Delete ALL data? Cannot be undone.')){ setEntries([]); setPending([]); }}}>
               🗑 Clear All Data
             </button>
           </div>
