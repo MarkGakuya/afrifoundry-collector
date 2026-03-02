@@ -682,124 +682,265 @@ export default function AfriScout() {
   );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // DASHBOARD VIEW
+  // DASHBOARD VIEW — MISSION CONTROL
   // ═══════════════════════════════════════════════════════════════════════════
   if (view === 'dashboard') {
-    const wd       = weekDates();
-    const dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-    const wCounts  = wd.map(d => entries.filter(e=>e.date===d).length);
-    const maxDay   = Math.max(...wCounts, 1);
-    const synced   = entries.filter(e=>e.synced).length;
-    const avgQ     = entries.length ? Math.round(entries.reduce((s,e)=>s+(e.quality_score||0),0)/entries.length) : 0;
-    const totalPct = Math.min(Math.round((entries.length/GOAL_TOTAL)*100),100);
-    const secCounts= {};
+    const wd        = weekDates();
+    const dayNames  = ['S','M','T','W','T','F','S'];
+    const wCounts   = wd.map(d => entries.filter(e=>e.date===d).length);
+    const maxDay    = Math.max(...wCounts, 1);
+    const todayStr  = new Date().toISOString().split('T')[0];
+    const avgQ      = entries.length ? Math.round(entries.reduce((s,e)=>s+(e.quality_score||0),0)/entries.length) : 0;
+    const totalPct  = Math.min((entries.length/GOAL_TOTAL)*100, 100);
+    const fieldCnt  = entries.filter(e=>e.mode==='field').length;
+    const weekTotal = wCounts.reduce((a,b)=>a+b,0);
+
+    // Streak — consecutive days with ≥1 entry going back from today
+    let streak = 0;
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(); d.setDate(d.getDate()-i);
+      const ds = d.toISOString().split('T')[0];
+      if (entries.some(e=>e.date===ds)) streak++;
+      else if (i > 0) break;
+    }
+
+    // Best day ever
+    const dayCounts = {};
+    entries.forEach(e=>{ dayCounts[e.date]=(dayCounts[e.date]||0)+1; });
+    const bestDay = Math.max(...Object.values(dayCounts), 0);
+
+    // Sector counts
+    const secCounts = {};
     entries.forEach(e=>{ secCounts[e.category]=(secCounts[e.category]||0)+1; });
-    const topSecs  = Object.entries(secCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
-    const todayAll = new Date().toISOString().split('T')[0];
+    const topSecs = Object.entries(secCounts).sort((a,b)=>b[1]-a[1]).slice(0,6);
+    const coveredSectors = Object.keys(secCounts).length;
+
+    // Regions collected
+    const regionCounts = {};
+    entries.forEach(e=>{ if(e.region) regionCounts[e.region]=(regionCounts[e.region]||0)+1; });
+
+    // Priority missions — gaps in coverage
+    const MISSIONS = [
+      { name:'Kisumu CBD',        region:'Kisumu',      icon:'🔴', priority:'CRITICAL', desc:'0 verified datapoints. Western hub.' },
+      { name:'Nakuru Town',       region:'Nakuru',      icon:'🔴', priority:'CRITICAL', desc:'Major agri market. Grain prices needed.' },
+      { name:'Eldoret CBD',       region:'Eldoret',     icon:'🟠', priority:'HIGH',     desc:'Logistics hub. Transport costs missing.' },
+      { name:'Gikomba Market',    region:'Nairobi',     icon:'🟠', priority:'HIGH',     desc:'Needs monthly refresh. Mitumba prices.' },
+      { name:'Kongowea Market',   region:'Mombasa',     icon:'🟢', priority:'ACTIVE',   desc:'Good coverage. Quarterly check.' },
+      { name:'Eastleigh',         region:'Nairobi',     icon:'🟢', priority:'ACTIVE',   desc:'Retail strong. Add healthcare pricing.' },
+    ].map(m => ({
+      ...m,
+      count: regionCounts[m.region] || 0,
+    }));
+
+    // SVG ring for today's goal
+    const R = 54, STROKE = 7;
+    const circ = 2 * Math.PI * R;
+    const dayPct = Math.min(todayCnt / GOAL_DAY, 1);
+    const dash   = circ * dayPct;
+
+    // Hour greeting
+    const hr = new Date().getHours();
+    const greeting = hr < 12 ? 'Good morning' : hr < 17 ? 'Good afternoon' : 'Good evening';
 
     return (
-      <div style={S.page}>
+      <div style={{ ...S.page, background:'#060610' }}>
+        <style>{`
+          @keyframes spin{to{transform:rotate(360deg)}}
+          @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+          @keyframes ringFill{from{stroke-dashoffset:${circ}}to{stroke-dashoffset:${circ - dash}}}
+          @keyframes glow{0%,100%{box-shadow:0 0 20px rgba(249,115,22,0.15)}50%{box-shadow:0 0 35px rgba(249,115,22,0.3)}}
+          @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+          .dash-row{animation:fadeUp 0.4s ease both}
+          .dash-row:nth-child(1){animation-delay:0.05s}
+          .dash-row:nth-child(2){animation-delay:0.1s}
+          .dash-row:nth-child(3){animation-delay:0.15s}
+          .dash-row:nth-child(4){animation-delay:0.2s}
+          .dash-row:nth-child(5){animation-delay:0.25s}
+          .dash-row:nth-child(6){animation-delay:0.3s}
+          .dash-row:nth-child(7){animation-delay:0.35s}
+          .mission-card:hover{transform:translateX(2px);transition:transform 0.15s}
+        `}</style>
         <div style={S.wrap}>
-          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'18px 0 14px' }}>
-            <button style={S.btnG} onClick={()=>setView('collect')}>← Back</button>
-            <span style={S.h1}>Dashboard</span>
-          </div>
 
-          {/* Big goal */}
-          <div style={{ ...S.card, background:'linear-gradient(135deg,rgba(249,115,22,0.1),rgba(16,185,129,0.06))', border:'1px solid rgba(249,115,22,0.2)' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', marginBottom:6 }}>
-              <span style={{ fontWeight:700, fontSize:13 }}>10,000 Datapoint Goal</span>
-              <span style={{ fontWeight:800, color:C.orange }}>{totalPct}%</span>
-            </div>
-            <div style={{ background:'rgba(0,0,0,0.3)', borderRadius:6, height:10, overflow:'hidden', marginBottom:8 }}>
-              <div style={{ width:totalPct+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:6, transition:'width 0.6s' }}/>
-            </div>
-            <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#64748b', fontFamily:'Space Mono,monospace' }}>
-              <span>{entries.length.toLocaleString()} collected</span>
-              <span>{(GOAL_TOTAL-entries.length).toLocaleString()} to go</span>
-            </div>
-          </div>
-
-          {/* Stats */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
-            {[
-              { l:'Today',         v:todayCnt,           sub:`/${GOAL_DAY} goal`,  c:C.orange },
-              { l:'Total',         v:entries.length,     sub:'all time',           c:C.blue },
-              { l:'Avg Quality',   v:avgQ+'%',           sub:'per entry',          c:C.green },
-              { l:'Synced',        v:synced,             sub:`of ${entries.length}`, c:C.purple },
-            ].map(s=>(
-              <div key={s.l} style={S.card}>
-                <div style={{ fontSize:26, fontWeight:800, color:s.c, letterSpacing:'-0.5px' }}>{s.v}</div>
-                <div style={{ fontSize:12, color:'#94a3b8', fontWeight:600 }}>{s.l}</div>
-                <div style={{ fontSize:11, color:'#475569', fontFamily:'Space Mono,monospace' }}>{s.sub}</div>
+          {/* HEADER */}
+          <div className="dash-row" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 0 20px' }}>
+            <div>
+              <div style={{ fontSize:11, color:'#475569', fontFamily:'Space Mono,monospace', letterSpacing:'1px', textTransform:'uppercase', marginBottom:3 }}>
+                {greeting}, {collector?.name?.split(' ')[0] || 'Collector'}
               </div>
-            ))}
+              <div style={{ fontSize:20, fontWeight:800, color:'#e2e8f0', letterSpacing:'-0.5px' }}>Mission Control</div>
+            </div>
+            <button style={{ ...S.btnG, fontSize:13, color:'#475569' }} onClick={()=>setView('collect')}>← Collect</button>
           </div>
 
-          {/* Weekly bar chart */}
-          <div style={S.card}>
-            <div style={S.h2}>This Week</div>
-            <div style={{ display:'flex', alignItems:'flex-end', gap:6, height:90 }}>
+          {/* HERO — Today's goal ring + streak */}
+          <div className="dash-row" style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:14 }}>
+
+            {/* Ring */}
+            <div style={{ background:'rgba(249,115,22,0.04)', border:'1px solid rgba(249,115,22,0.15)', borderRadius:20, padding:'20px 16px', display:'flex', flexDirection:'column', alignItems:'center', animation:'glow 3s ease-in-out infinite' }}>
+              <div style={{ position:'relative', width:124, height:124, marginBottom:10 }}>
+                <svg width="124" height="124" style={{ transform:'rotate(-90deg)' }}>
+                  <circle cx="62" cy="62" r={R} fill="none" stroke="rgba(249,115,22,0.1)" strokeWidth={STROKE}/>
+                  <circle cx="62" cy="62" r={R} fill="none" stroke={todayCnt>=GOAL_DAY?C.green:C.orange}
+                    strokeWidth={STROKE} strokeLinecap="round"
+                    strokeDasharray={circ}
+                    strokeDashoffset={circ - dash}
+                    style={{ transition:'stroke-dashoffset 1s ease', filter:`drop-shadow(0 0 6px ${todayCnt>=GOAL_DAY?C.green:C.orange})` }}
+                  />
+                </svg>
+                <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center' }}>
+                  <div style={{ fontSize:32, fontWeight:800, color:todayCnt>=GOAL_DAY?C.green:C.orange, letterSpacing:'-1px', lineHeight:1 }}>{todayCnt}</div>
+                  <div style={{ fontSize:11, color:'#475569', fontFamily:'Space Mono,monospace' }}>/{GOAL_DAY}</div>
+                </div>
+              </div>
+              <div style={{ fontSize:11, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.8px' }}>Today's Goal</div>
+              {todayCnt >= GOAL_DAY && <div style={{ fontSize:11, color:C.green, marginTop:4, fontWeight:700 }}>🎉 Crushed it!</div>}
+            </div>
+
+            {/* Right stats */}
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {/* Streak */}
+              <div style={{ background:'rgba(251,191,36,0.06)', border:'1px solid rgba(251,191,36,0.15)', borderRadius:14, padding:'14px 16px', flex:1, display:'flex', flexDirection:'column', justifyContent:'center' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:2 }}>
+                  <span style={{ fontSize:20 }}>🔥</span>
+                  <span style={{ fontSize:28, fontWeight:800, color:'#fbbf24', letterSpacing:'-1px' }}>{streak}</span>
+                </div>
+                <div style={{ fontSize:10, color:'#64748b', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.8px' }}>Day Streak</div>
+              </div>
+              {/* Best day */}
+              <div style={{ background:'rgba(16,185,129,0.06)', border:'1px solid rgba(16,185,129,0.15)', borderRadius:14, padding:'14px 16px', flex:1, display:'flex', flexDirection:'column', justifyContent:'center' }}>
+                <div style={{ fontSize:28, fontWeight:800, color:C.green, letterSpacing:'-1px', lineHeight:1, marginBottom:2 }}>{bestDay}</div>
+                <div style={{ fontSize:10, color:'#64748b', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.8px' }}>Best Day</div>
+              </div>
+            </div>
+          </div>
+
+          {/* 10K MISSION PROGRESS */}
+          <div className="dash-row" style={{ background:'linear-gradient(135deg,rgba(249,115,22,0.07),rgba(6,6,16,0))', border:'1px solid rgba(249,115,22,0.12)', borderRadius:16, padding:'16px 18px', marginBottom:14 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-end', marginBottom:10 }}>
+              <div>
+                <div style={{ fontSize:10, color:'#475569', fontFamily:'Space Mono,monospace', letterSpacing:'1px', textTransform:'uppercase' }}>Operation 10K</div>
+                <div style={{ fontSize:24, fontWeight:800, color:C.orange, letterSpacing:'-0.5px', lineHeight:1.1 }}>{entries.length.toLocaleString()}<span style={{ fontSize:13, color:'#475569', fontWeight:400, fontFamily:'Space Mono,monospace' }}> / 10,000</span></div>
+              </div>
+              <div style={{ textAlign:'right' }}>
+                <div style={{ fontSize:22, fontWeight:800, color:'#e2e8f0', letterSpacing:'-0.5px' }}>{totalPct.toFixed(1)}%</div>
+                <div style={{ fontSize:10, color:'#475569', fontFamily:'Space Mono,monospace' }}>{(GOAL_TOTAL-entries.length).toLocaleString()} remaining</div>
+              </div>
+            </div>
+            {/* Segmented bar */}
+            <div style={{ background:'rgba(0,0,0,0.4)', borderRadius:8, height:12, overflow:'hidden', position:'relative' }}>
+              <div style={{ width:totalPct+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:8, transition:'width 1s ease', boxShadow:`0 0 12px rgba(249,115,22,0.4)` }}/>
+            </div>
+            <div style={{ display:'flex', justifyContent:'space-between', marginTop:8, fontSize:10, color:'#334155', fontFamily:'Space Mono,monospace' }}>
+              <span>▪ Field: {fieldCnt}</span>
+              <span>▪ Surveys: {entries.length-fieldCnt}</span>
+              <span>▪ Sectors: {coveredSectors}/15</span>
+              <span>▪ Quality: {avgQ}%</span>
+            </div>
+          </div>
+
+          {/* WEEKLY RHYTHM */}
+          <div className="dash-row" style={{ ...S.card, marginBottom:14 }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14 }}>
+              <div style={{ fontSize:12, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.8px' }}>This Week</div>
+              <div style={{ fontSize:12, fontFamily:'Space Mono,monospace', color:C.orange, fontWeight:700 }}>{weekTotal} pts</div>
+            </div>
+            <div style={{ display:'flex', alignItems:'flex-end', gap:5, height:100 }}>
               {wd.map((d,i)=>{
-                const cnt    = wCounts[i];
-                const pct    = (cnt/maxDay)*100;
-                const isToday= d===todayAll;
+                const cnt     = wCounts[i];
+                const barPct  = (cnt/maxDay)*100;
+                const isToday = d===todayStr;
+                const goalMet = cnt >= GOAL_DAY;
+                const barColor= goalMet ? C.green : isToday ? C.orange : cnt > 0 ? '#2a3a52' : '#141420';
                 return (
-                  <div key={d} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:4 }}>
-                    <div style={{ fontSize:10, color:C.orange, fontWeight:700, minHeight:14 }}>{cnt||''}</div>
-                    <div style={{ width:'100%', background:'#0a0a14', borderRadius:4, height:64, display:'flex', alignItems:'flex-end', overflow:'hidden' }}>
-                      <div style={{ width:'100%', height:Math.max(pct,3)+'%', background:isToday?C.orange:'#2a2a40', borderRadius:4, opacity:cnt===0?0.3:1, transition:'height 0.6s' }}/>
+                  <div key={d} style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', gap:5 }}>
+                    <div style={{ fontSize:10, fontWeight:700, minHeight:14, color:goalMet?C.green:cnt>0?C.orange:'transparent', fontFamily:'Space Mono,monospace' }}>{cnt||''}</div>
+                    <div style={{ width:'100%', background:'#0d0d1a', borderRadius:5, height:74, display:'flex', alignItems:'flex-end', overflow:'hidden', position:'relative' }}>
+                      <div style={{ width:'100%', height:Math.max(barPct,4)+'%', background:barColor, borderRadius:5, transition:'height 0.8s cubic-bezier(0.34,1.56,0.64,1)', boxShadow:isToday?`0 0 10px rgba(249,115,22,0.5)`:goalMet?`0 0 8px rgba(16,185,129,0.4)`:'none' }}/>
+                      {isToday && <div style={{ position:'absolute', bottom:0, left:0, right:0, height:2, background:C.orange, borderRadius:2 }}/>}
                     </div>
-                    <div style={{ fontSize:10, color:isToday?C.orange:'#475569', fontWeight:isToday?700:400 }}>{dayNames[new Date(d).getDay()]}</div>
+                    <div style={{ fontSize:10, color:isToday?C.orange:'#334155', fontWeight:isToday?800:400, fontFamily:'Space Mono,monospace' }}>{dayNames[new Date(d).getDay()]}</div>
                   </div>
                 );
               })}
             </div>
-            <div style={{ display:'flex', justifyContent:'space-between', marginTop:10, fontSize:11, color:'#475569', fontFamily:'Space Mono,monospace' }}>
-              <span>Field: {entries.filter(e=>e.mode==='field').length}</span>
-              <span>Surveys: {entries.filter(e=>e.mode==='survey').length}</span>
-              <span>Week total: {wCounts.reduce((a,b)=>a+b,0)}</span>
-            </div>
           </div>
 
-          {/* Sector breakdown */}
+          {/* NEXT DEPLOYMENT — Priority missions */}
+          <div className="dash-row" style={{ marginBottom:14 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+              <div style={{ width:3, height:16, background:C.orange, borderRadius:2 }}/>
+              <div style={{ fontSize:12, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.8px' }}>Next Deployment</div>
+            </div>
+            {MISSIONS.map((m,i)=>{
+              const urgencyColor = m.priority==='CRITICAL'?C.red:m.priority==='HIGH'?C.orange:C.green;
+              return (
+                <div key={m.name} className="mission-card" style={{ background:'#0a0a18', border:`1px solid ${urgencyColor}22`, borderLeft:`3px solid ${urgencyColor}`, borderRadius:12, padding:'12px 14px', marginBottom:8, display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ fontSize:18, flexShrink:0 }}>{m.icon}</div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:2 }}>
+                      <span style={{ fontWeight:700, fontSize:13, color:'#e2e8f0' }}>{m.name}</span>
+                      <span style={{ fontSize:9, fontWeight:700, color:urgencyColor, background:urgencyColor+'18', border:`1px solid ${urgencyColor}33`, borderRadius:20, padding:'2px 7px', letterSpacing:'0.5px', flexShrink:0 }}>{m.priority}</span>
+                    </div>
+                    <div style={{ fontSize:11, color:'#475569', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{m.desc}</div>
+                  </div>
+                  <div style={{ textAlign:'right', flexShrink:0 }}>
+                    <div style={{ fontSize:16, fontWeight:800, color:m.count>0?C.green:'#475569', fontFamily:'Space Mono,monospace' }}>{m.count}</div>
+                    <div style={{ fontSize:9, color:'#334155', fontFamily:'Space Mono,monospace' }}>pts</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* SECTOR COVERAGE */}
           {topSecs.length > 0 && (
-            <div style={S.card}>
-              <div style={S.h2}>Sector Coverage</div>
+            <div className="dash-row" style={{ ...S.card, marginBottom:14 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+                <div style={{ width:3, height:16, background:C.green, borderRadius:2 }}/>
+                <div style={{ fontSize:12, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.8px' }}>Sector Intel</div>
+              </div>
               {topSecs.map(([sec,cnt])=>{
                 const s   = SECTORS.find(x=>x.id===sec);
                 const pct = Math.round((cnt/entries.length)*100);
                 return (
-                  <div key={sec} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-                    <span style={{ fontSize:18, width:24 }}>{s?.icon||'📦'}</span>
-                    <span style={{ fontSize:12, color:'#94a3b8', width:86, flexShrink:0, fontWeight:600 }}>{s?.name||sec}</span>
-                    <div style={{ flex:1, background:'#0a0a14', borderRadius:4, height:7, overflow:'hidden' }}>
-                      <div style={{ width:pct+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:4 }}/>
+                  <div key={sec} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:9 }}>
+                    <span style={{ fontSize:16, width:22, flexShrink:0 }}>{s?.icon||'📦'}</span>
+                    <span style={{ fontSize:12, color:'#64748b', width:80, flexShrink:0, fontWeight:600 }}>{s?.name||sec}</span>
+                    <div style={{ flex:1, background:'#0a0a18', borderRadius:4, height:6, overflow:'hidden' }}>
+                      <div style={{ width:pct+'%', height:'100%', background:`linear-gradient(90deg,${C.orange},${C.green})`, borderRadius:4, transition:'width 1s ease' }}/>
                     </div>
-                    <span style={{ fontSize:11, color:'#475569', width:30, textAlign:'right', fontFamily:'Space Mono,monospace' }}>{cnt}</span>
+                    <span style={{ fontSize:11, color:'#475569', width:28, textAlign:'right', fontFamily:'Space Mono,monospace' }}>{cnt}</span>
                   </div>
                 );
               })}
             </div>
           )}
 
-          {/* Recent */}
-          <div style={S.card}>
-            <div style={S.h2}>Recent Activity</div>
-            {entries.slice(-5).reverse().map(e=>(
-              <div key={e.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
-                <div>
-                  <div style={{ fontSize:13, fontWeight:600 }}>{e.item_display||e.item.replace(/_/g,' ')}</div>
-                  <div style={{ fontSize:10, color:'#64748b' }}>{e.category} · {e.region}</div>
+          {/* RECENT INTEL */}
+          <div className="dash-row" style={S.card}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:12 }}>
+              <div style={{ width:3, height:16, background:C.blue, borderRadius:2 }}/>
+              <div style={{ fontSize:12, fontWeight:700, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.8px' }}>Recent Intel</div>
+            </div>
+            {entries.length === 0
+              ? <div style={{ textAlign:'center', padding:'20px 0', color:'#334155', fontSize:13 }}>No entries yet — start collecting</div>
+              : entries.slice(-5).reverse().map(e=>(
+                <div key={e.id} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'9px 0', borderBottom:'1px solid rgba(255,255,255,0.03)' }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ fontSize:13, fontWeight:600, color:'#d1d5db', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{e.item_display||e.item.replace(/_/g,' ')}</div>
+                    <div style={{ fontSize:10, color:'#475569', marginTop:1 }}>{e.category} · {e.region}{e.market?` · ${e.market}`:''}</div>
+                  </div>
+                  <div style={{ textAlign:'right', flexShrink:0, paddingLeft:10 }}>
+                    {e.mode==='field' && <div style={{ fontSize:14, fontWeight:800, color:C.green, fontFamily:'Space Mono,monospace' }}>KES {e.value.toLocaleString()}</div>}
+                    <div style={{ fontSize:10, color:'#334155', fontFamily:'Space Mono,monospace' }}>{timeAgo(e.timestamp)}</div>
+                  </div>
                 </div>
-                <div style={{ textAlign:'right' }}>
-                  {e.mode==='field' && <div style={{ fontSize:14, fontWeight:800, color:C.green }}>KES {e.value.toLocaleString()}</div>}
-                  <div style={{ fontSize:10, color:'#475569', fontFamily:'Space Mono,monospace' }}>{timeAgo(e.timestamp)}</div>
-                </div>
-              </div>
-            ))}
-            {entries.length===0 && <div style={{ color:'#475569', fontSize:13, textAlign:'center', padding:'16px 0' }}>No entries yet</div>}
+              ))
+            }
           </div>
+
+          <div style={{ height:20 }}/>
         </div>
       </div>
     );
