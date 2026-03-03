@@ -1,4 +1,4 @@
-const CACHE = 'afriscout-v2.0.0';
+const CACHE = 'afriscout-v2.1.0';
 const PRECACHE = ['/', '/index.html', '/manifest.json'];
 
 self.addEventListener('install', e => {
@@ -16,12 +16,14 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // API calls: network first, no cache
   if (e.request.url.includes('/api/')) {
-    e.respondWith(fetch(e.request).catch(() => new Response('{"error":"offline"}', { headers: { 'Content-Type': 'application/json' } })));
+    e.respondWith(
+      fetch(e.request).catch(() =>
+        new Response('{"error":"offline"}', { headers: { 'Content-Type': 'application/json' } })
+      )
+    );
     return;
   }
-  // App shell: cache first
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request).then(res => {
       if (res.status === 200) {
